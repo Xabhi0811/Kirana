@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kirana — Nearby shopping, simplified</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#"><span class="brand-mark">K</span><span>Ki<span>rana</span></span></a>
+        <nav>
+          <a class="nav-link active" href="#home"><span>⌂</span> Home</a>
+          <a class="nav-link" href="#shop"><span>⌕</span> Explore</a>
+          <a class="nav-link" href="#compare"><span>⇄</span> Compare prices</a>
+          <a class="nav-link" href="#orders"><span>□</span> My orders</a>
+          <a class="nav-link" href="#lists"><span>☷</span> Shopping lists</a>
+          <a class="nav-link" href="#chat"><span>◌</span> Messages <b>2</b></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <a class="nav-link" href="#"><span>⚙</span> Settings</a>
+          <div class="profile"><div class="avatar">AR</div><div><strong>Aarav Rao</strong><small>Customer</small></div><span>⌄</span></div>
+        </div>
+      </aside>
+
+      <main>
+        <header>
+          <button class="mobile-menu" aria-label="Open menu">☰</button>
+          <button class="location"><span class="pin">●</span><span><small>DELIVERING TO</small><strong>Indiranagar, Bengaluru</strong></span><span>⌄</span></button>
+          <div class="header-actions"><button class="notification" aria-label="Notifications">♧<i></i></button><button class="cart-button" id="openCart"><span>🛍</span> Cart <em id="cartCount">2</em></button></div>
+        </header>
+
+        <section class="hero" id="home">
+          <div class="hero-copy"><p class="eyebrow">YOUR NEIGHBOURHOOD, ONLINE</p><h1>Good things are<br/><i>closer</i> than you think.</h1><p>Find what you need at the shops you know and love. No delivery or handling fees, ever.</p>
+            <div class="search-box"><span>⌕</span><input id="searchInput" placeholder="Search for products or shops" /><button id="searchButton">Search</button></div>
+            <div class="quick-search"><span>Popular:</span><button>Tata Salt</button><button>Fresh milk</button><button>Brown bread</button></div>
+          </div>
+          <div class="hero-visual"><div class="sun"></div><div class="store"><div class="awning"></div><span>FRESH & LOCAL</span><div class="door"></div><div class="window"></div></div><div class="bag bag-one">🥬</div><div class="bag bag-two">🥖</div><div class="tag float-one">✦ 0% fees</div><div class="tag float-two">↗ nearby</div></div>
+        </section>
+
+        <section class="categories"><div class="section-title"><div><p class="eyebrow">SHOP BY CATEGORY</p><h2>What are you looking for?</h2></div><a href="#">See all categories <span>→</span></a></div>
+          <div class="category-grid">
+            <button class="category-card selected"><span class="category-icon green">🥑</span><strong>Groceries</strong><small>120+ shops</small></button>
+            <button class="category-card"><span class="category-icon orange">🥖</span><strong>Bakery</strong><small>32 shops</small></button>
+            <button class="category-card"><span class="category-icon purple">🧴</span><strong>Personal care</strong><small>48 shops</small></button>
+            <button class="category-card"><span class="category-icon yellow">▤</span><strong>Stationery</strong><small>26 shops</small></button>
+            <button class="category-card"><span class="category-icon pink">💐</span><strong>Flowers</strong><small>18 shops</small></button>
+            <button class="category-card"><span class="category-icon blue">💊</span><strong>Health</strong><small>15 shops</small></button>
+          </div>
+        </section>
+
+        <section class="nearby" id="shop"><div class="section-title"><div><p class="eyebrow">AROUND YOU</p><h2>Popular nearby shops</h2></div><div class="arrows"><button>←</button><button>→</button></div></div><div class="shop-grid" id="shopGrid"></div></section>
+
+        <section class="comparison" id="compare"><div class="comparison-heading"><div><p class="eyebrow">SMARTER SHOPPING</p><h2>Compare prices in your area</h2><p>One search, every nearby shop. Choose what works best for you.</p></div><a href="#compare">Compare all products <span>→</span></a></div><div class="compare-panel"><div class="compare-product"><div class="product-illustration salt">SALT<br/><b>1 kg</b></div><div><span>GROCERY · 1 KG</span><h3>Tata Salt</h3><p>Available at 6 shops near you</p></div></div><div class="price-list" id="priceList"></div></div></section>
+
+        <section class="split-section" id="lists"><div class="lists-card"><div class="card-heading"><div><p class="eyebrow">SAVE FOR LATER</p><h2>My shopping lists</h2></div><button class="round-add" id="newList">+</button></div><div class="list-item"><div class="list-icon">☷</div><div><strong>Monthly essentials</strong><small>8 items · Updated today</small></div><span>→</span></div><div class="list-item"><div class="list-icon peach">☷</div><div><strong>Sunday breakfast</strong><small>5 items · Updated yesterday</small></div><span>→</span></div><a class="subtle-link" href="#">View all lists →</a></div>
+          <div class="order-card" id="orders"><p class="eyebrow">ORDER STATUS</p><div class="order-title"><h2>On its way!</h2><span class="status-pill">Out for delivery</span></div><p class="order-copy">Your order from <b>Sharma General Store</b> is arriving in about 18 minutes.</p><div class="tracker"><span class="done">✓</span><i></i><span class="done">✓</span><i></i><span class="current">◉</span><i></i><span>✓</span></div><div class="tracker-labels"><small>Placed</small><small>Preparing</small><small>On the way</small><small>Delivered</small></div><button class="track-btn">Track order <span>→</span></button></div>
+        </section>
+      </main>
+    </div>
+    <div class="cart-drawer" id="cartDrawer"><div class="drawer-header"><h2>Your cart</h2><button id="closeCart">×</button></div><p class="cart-shop">From <b>Sharma General Store</b></p><div id="cartItems"></div><div class="cart-total"><span>Total <small>Delivery & handling included</small></span><b id="cartTotal">₹100</b></div><button class="checkout">Proceed to checkout <span>→</span></button></div><div class="backdrop" id="backdrop"></div>
+    <div class="toast" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
+<!-- Archived visual sketch. Run npm run dev for the working Next.js app. -->

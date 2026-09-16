@@ -1,0 +1,12 @@
+node_modules/
+.demo-data.json
+.local-postgres/
+.next/
+.env*
+!.env.example
+*.tsbuildinfo
+supabase/.temp/
+supabase/.branches/
+coverage/
+test-results/
+playwright-report/
