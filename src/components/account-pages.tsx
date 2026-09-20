@@ -199,6 +199,26 @@ function GoogleAuthButton() {
     setBusy(true);
     setError(undefined);
     try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !publishableKey)
+        throw new Error("Supabase is not configured.");
+      const settingsResponse = await fetch(`${supabaseUrl}/auth/v1/settings`, {
+        headers: { apikey: publishableKey },
+        cache: "no-store",
+      });
+      if (!settingsResponse.ok)
+        throw new Error("Supabase Auth settings are unavailable.");
+      const settings = (await settingsResponse.json()) as {
+        external?: { google?: boolean };
+      };
+      if (!settings.external?.google) {
+        setBusy(false);
+        setError(
+          "Google sign-in is not enabled in Supabase yet. Enable the Google provider or use email instead.",
+        );
+        return;
+      }
       const { error: providerError } =
         await browserSupabase().auth.signInWithOAuth({
           provider: "google",
