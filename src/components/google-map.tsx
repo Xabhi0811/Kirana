@@ -74,6 +74,8 @@ export function GoogleMap({
     [loading, setLoading] = useState(true),
     [locating, setLocating] = useState(false);
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const placesEnabled =
+    process.env.NEXT_PUBLIC_GOOGLE_PLACES_ENABLED === "true";
   const valueLatitude = value?.latitude,
     valueLongitude = value?.longitude;
 
@@ -94,7 +96,9 @@ export function GoogleMap({
         configureMaps(apiKey!);
         const [{ Map, InfoWindow }, places] = await Promise.all([
           importLibrary("maps"),
-          enableSearch ? importLibrary("places") : Promise.resolve(null),
+          enableSearch && placesEnabled
+            ? importLibrary("places")
+            : Promise.resolve(null),
         ]);
         if (cancelled || !mapNode.current) return;
         const fallback = { lat: 12.9716, lng: 77.5946 };
@@ -259,6 +263,7 @@ export function GoogleMap({
     customerLocation,
     deliveryRadiusKm,
     enableSearch,
+    placesEnabled,
     selectedShopId,
     shops,
     primaryLabel,
@@ -301,7 +306,9 @@ export function GoogleMap({
     );
   return (
     <div className="google-map-panel">
-      {enableSearch && <div ref={searchNode} className="place-search" />}
+      {enableSearch && placesEnabled && (
+        <div ref={searchNode} className="place-search" />
+      )}
       {showCurrentLocation && onChange && (
         <Button
           type="button"
@@ -326,7 +333,9 @@ export function GoogleMap({
       />
       {onChange && (
         <small className="muted">
-          Search above or click the map to choose coordinates.
+          {enableSearch && placesEnabled
+            ? "Search above or click the map to choose coordinates."
+            : "Click the map to choose coordinates, or enter them manually."}
         </small>
       )}
     </div>

@@ -231,6 +231,7 @@ Keep values in ignored root `.env.local` or deployment secret configuration. Nam
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Required public publishable/legacy anon key            |
 | `NEXT_PUBLIC_SITE_URL`                 | Public app origin for Auth redirects                   |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`      | Restricted browser key for Maps JavaScript and Places  |
+| `NEXT_PUBLIC_GOOGLE_PLACES_ENABLED`    | Set to `true` only after Places API (New) is authorized |
 | `DIRECT_URL`                           | Server-only session PostgreSQL tooling connection      |
 | `SUPABASE_DB_CA_FILE`                  | Tooling trusted CA certificate path                    |
 | `SUPABASE_SERVICE_ROLE_KEY`            | Privileged legacy seeder/registration integration only |
@@ -265,6 +266,8 @@ Enable only these Google Cloud APIs for the Maps project:
 - Places API (New)
 
 Create a browser API key and set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` in ignored `.env.local` and the deployment environment. Apply an **HTTP referrers** application restriction for `http://localhost:3000/*` during local development and the real HTTPS production origin(s). Apply API restrictions for only the two APIs above. Billing must be active for the Google Cloud project. Do not use an OAuth client secret, Supabase service-role key, or unrestricted server credential as the browser key.
+
+Address autocomplete is disabled by default, which keeps maps and manual location selection usable when Places is not configured. After enabling **Places API (New)** (`places.googleapis.com`) in the same Google Cloud project, adding it to the browser key's API restrictions, confirming the referrer restriction and billing, set `NEXT_PUBLIC_GOOGLE_PLACES_ENABLED=true` and restart/rebuild the app. Leave it `false` if only map selection is required.
 
 The map code is loaded on demand only when a map component is rendered; Places is loaded only for address/location selection. No Directions, Distance Matrix, Street View, or separate Geocoding API is used. If a map reports an unavailable/configuration message, check the key variable, billing, enabled APIs, referrer restrictions, browser network/CSP errors, and restart Next.js after changing the public build-time variable.
 
