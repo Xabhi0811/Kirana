@@ -145,7 +145,7 @@ async function main() {
         );
       await db.query(
         await readFileSync(
-          resolve("supabase/local-postgres-bootstrap.sql"),
+          resolve("database/supabase/local-postgres-bootstrap.sql"),
           "utf8",
         ),
       );
@@ -154,11 +154,11 @@ async function main() {
       );
     }
     let installed = 0;
-    for (const file of readdirSync(resolve("supabase/migrations"))
+    for (const file of readdirSync(resolve("database/supabase/migrations"))
       .filter((f) => /^\d{12}_.+\.sql$/.test(f))
       .sort()) {
       const version = file.slice(0, -4),
-        sql = readFileSync(resolve("supabase/migrations", file), "utf8"),
+        sql = readFileSync(resolve("database/supabase/migrations", file), "utf8"),
         checksum = createHash("sha256").update(sql).digest("hex");
       const applied = await db.query(
         "select checksum from private.localkart_migrations where version=$1",

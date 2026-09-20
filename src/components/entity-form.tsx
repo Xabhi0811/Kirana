@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 import { api } from "@/lib/api-client";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { useToast } from "./feedback";
+import { GoogleMap, type MapLocation } from "./google-map";
 export interface Field {
   name: string;
   label: string;
@@ -33,6 +34,7 @@ export function EntityForm({
   path,
   onSaved,
   submitLabel = "Save changes",
+  locationFields,
 }: {
   schema: z.ZodType;
   defaults: Record<string, unknown>;
@@ -40,6 +42,15 @@ export function EntityForm({
   path: string;
   onSaved?: (data: unknown) => void;
   submitLabel?: string;
+  locationFields?: {
+    address: string;
+    latitude: string;
+    longitude: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    deliveryRadius?: string;
+  };
 }) {
   const notify = useToast(),
     [error, setError] = useState<string | null>(null);
@@ -47,6 +58,7 @@ export function EntityForm({
     register,
     handleSubmit,
     setValue,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<Record<string, unknown>>({
     defaultValues: defaults,
@@ -54,6 +66,37 @@ export function EntityForm({
       Record<string, unknown>
     >,
   });
+  const liveValues = useWatch({ control });
+  const latitude = locationFields
+      ? Number(liveValues[locationFields.latitude])
+      : NaN,
+    longitude = locationFields
+      ? Number(liveValues[locationFields.longitude])
+      : NaN,
+    deliveryRadius = locationFields?.deliveryRadius
+      ? Number(liveValues[locationFields.deliveryRadius])
+      : undefined;
+  function selectLocation(location: MapLocation) {
+    if (!locationFields) return;
+    setValue(locationFields.latitude, location.latitude, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    setValue(locationFields.longitude, location.longitude, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    const optional = [
+      [locationFields.address, location.address],
+      [locationFields.city, location.city],
+      [locationFields.state, location.state],
+      [locationFields.pincode, location.pincode],
+    ] as const;
+    optional.forEach(([field, value]) => {
+      if (field && value)
+        setValue(field, value, { shouldDirty: true, shouldValidate: true });
+    });
+  }
   async function submit(data: Record<string, unknown>) {
     setError(null);
     try {
@@ -66,6 +109,24 @@ export function EntityForm({
   }
   return (
     <form className="form-fields" onSubmit={handleSubmit(submit)}>
+      {locationFields && (
+        <GoogleMap
+          value={
+            Number.isFinite(latitude) && Number.isFinite(longitude)
+              ? { latitude, longitude }
+              : null
+          }
+          onChange={selectLocation}
+          deliveryRadiusKm={
+            deliveryRadius && Number.isFinite(deliveryRadius)
+              ? deliveryRadius
+              : undefined
+          }
+          enableSearch
+          showCurrentLocation
+          height="compact"
+        />
+      )}
       {fields.map((f) => (
         <label
           key={f.name}

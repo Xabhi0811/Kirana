@@ -478,6 +478,16 @@ export function ManagementPage({
             defaults={defaults}
             fields={fields}
             path={"manage/" + resource + (edit ? "/" + edit.id : "")}
+            locationFields={
+              resource === "shops"
+                ? {
+                    address: "address",
+                    latitude: "latitude",
+                    longitude: "longitude",
+                    deliveryRadius: "delivery_radius_km",
+                  }
+                : undefined
+            }
             onSaved={() => {
               setEdit(undefined);
               result.refresh();

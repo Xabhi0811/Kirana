@@ -22,6 +22,7 @@ import { Loading, Empty, Failure } from "./feedback";
 import { Button } from "./ui/button";
 import { useProfile } from "./shell";
 import { MarketplaceNotice } from "./platform-pages";
+import { GoogleMap } from "./google-map";
 export function locationParams(
   location: { latitude: number; longitude: number } | null,
 ) {
@@ -332,7 +333,8 @@ export function SearchPage({
     [sort, setSort] = useState(kind === "shops" ? "distance" : "price"),
     [stock, setStock] = useState(false),
     [open, setOpen] = useState(false),
-    [page, setPage] = useState(0);
+    [page, setPage] = useState(0),
+    [selectedShop, setSelectedShop] = useState<string>();
   const q = useDebounce(query),
     categories = useQuery<Category[]>("categories");
   const params =
@@ -477,6 +479,14 @@ export function SearchPage({
             {tab === "products" ? "product listings" : "shops"} that deliver to
             you
           </p>
+          {tab === "shops" && (
+            <GoogleMap
+              value={location}
+              shops={result.data as Shop[]}
+              selectedShopId={selectedShop}
+              onShopSelect={(shop) => setSelectedShop(shop.id)}
+            />
+          )}
           <div className={tab === "products" ? "product-grid" : "shop-grid"}>
             {result.data.map((x, i) =>
               tab === "products" ? (

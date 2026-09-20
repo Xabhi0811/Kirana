@@ -7,6 +7,16 @@ node_modules/
 *.tsbuildinfo
 supabase/.temp/
 supabase/.branches/
+database/supabase/.temp/
+database/supabase/.branches/
 coverage/
 test-results/
 playwright-report/
+
+build/
+dist/
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db

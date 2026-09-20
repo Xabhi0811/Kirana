@@ -50,6 +50,9 @@ export default async function Page({ params, searchParams }: Props) {
         mode={
           route as "login" | "register" | "forgot-password" | "reset-password"
         }
+        oauthError={
+          route === "login" && typeof s.error === "string" ? s.error : undefined
+        }
       />
     );
   if (route === "search" && !id)

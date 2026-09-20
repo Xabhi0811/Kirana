@@ -52,7 +52,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609150001_localkart.sql",
+        "../database/supabase/migrations/202609150001_localkart.sql",
         import.meta.url,
       ),
       "utf8",
@@ -61,7 +61,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609150002_er_alignment.sql",
+        "../database/supabase/migrations/202609150002_er_alignment.sql",
         import.meta.url,
       ),
       "utf8",
@@ -70,7 +70,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609150003_feature_completion.sql",
+        "../database/supabase/migrations/202609150003_feature_completion.sql",
         import.meta.url,
       ),
       "utf8",
@@ -79,7 +79,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609160001_remove_rate_limits.sql",
+        "../database/supabase/migrations/202609160001_remove_rate_limits.sql",
         import.meta.url,
       ),
       "utf8",
@@ -88,7 +88,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609160002_audit_security.sql",
+        "../database/supabase/migrations/202609160002_audit_security.sql",
         import.meta.url,
       ),
       "utf8",
@@ -97,7 +97,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609160003_product_name_sort.sql",
+        "../database/supabase/migrations/202609160003_product_name_sort.sql",
         import.meta.url,
       ),
       "utf8",
@@ -106,7 +106,7 @@ before(async () => {
   await db.exec(
     await readFile(
       new URL(
-        "../supabase/migrations/202609160004_tracking_event_time.sql",
+        "../database/supabase/migrations/202609160004_tracking_event_time.sql",
         import.meta.url,
       ),
       "utf8",
@@ -760,7 +760,7 @@ test("whole-database consistency regressions have zero violations", async () => 
   await as(null);
   const checks = await db.query<{ check_name: string; violations: number }>(
     await readFile(
-      new URL("../supabase/tests/integrity.sql", import.meta.url),
+      new URL("../database/supabase/tests/integrity.sql", import.meta.url),
       "utf8",
     ),
   );

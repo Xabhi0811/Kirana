@@ -979,12 +979,71 @@ textarea {
 .auth-card > .muted {
   margin: 15px 0 24px;
 }
+.google-auth-button {
+  width: 100%;
+  background: white;
+  color: #26322a;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--line);
+}
+.auth-error {
+  margin-bottom: 16px;
+}
 .auth-links {
   display: flex;
   justify-content: space-between;
   color: var(--primary);
   font-size: 11px;
   margin-top: 20px;
+}
+
+.google-map-panel {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+.google-map {
+  width: 100%;
+  min-height: 340px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eef1eb;
+}
+.google-map-compact {
+  min-height: 250px;
+}
+.place-search gmp-place-autocomplete {
+  display: block;
+  width: 100%;
+}
+.map-message,
+.map-loading {
+  margin: 10px 0;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: #f5f2e9;
+  color: var(--muted);
+  font-size: 12px;
+}
+.map-message[role="alert"] {
+  background: #fff0ed;
+  color: #8a3b32;
 }
 .address-grid,
 .shopping-list-grid,

@@ -12,6 +12,7 @@ import { Button } from "./ui/button";
 import { ProductCard, LocationEmpty } from "./product-card";
 import { Empty, Failure, Loading, useToast } from "./feedback";
 import { useProfile } from "./shell";
+import { GoogleMap } from "./google-map";
 export function ShopPage({ id }: { id: string }) {
   const location = useStore((s) => s.location),
     profile = useProfile(),
@@ -124,6 +125,14 @@ export function ShopPage({ id }: { id: string }) {
           <MessageCircle size={15} />
           Chat with shop
         </Button>
+      </div>
+      <div className="mt-8">
+        <GoogleMap
+          value={{ latitude: s.latitude, longitude: s.longitude }}
+          customerLocation={location}
+          deliveryRadiusKm={Number(s.delivery_radius_km)}
+          primaryLabel="Shop"
+        />
       </div>
       <div className="section-title mt-8">
         <h2>In this shop</h2>

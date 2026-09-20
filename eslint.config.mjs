@@ -8,6 +8,6 @@ export default defineConfig([
     ".next/**",
     ".local-postgres/**",
     "next-env.d.ts",
-    "docs/prototype/**",
+    "archive/prototype/**",
   ]),
 ]);

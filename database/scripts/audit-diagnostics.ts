@@ -59,7 +59,7 @@ async function main() {
       );
     evidence.counts = counts;
     evidence.regressions = (
-      await db.query(readFileSync("supabase/tests/integrity.sql", "utf8"))
+      await db.query(readFileSync("database/supabase/tests/integrity.sql", "utf8"))
     ).rows;
     if (
       (evidence.regressions as { violations: number }[]).some(
@@ -96,7 +96,7 @@ async function main() {
     }
     await db.query("rollback");
     writeFileSync(
-      "docs/audit-evidence.json",
+      "database/evidence/audit-evidence.json",
       JSON.stringify(evidence, null, 2),
     );
   } finally {

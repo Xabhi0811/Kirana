@@ -13,11 +13,13 @@ import {
   DialogDescription,
 } from "./ui/dialog";
 import { useToast } from "./feedback";
+import { GoogleMap, type MapLocation } from "./google-map";
 export function LocationPicker({ profile }: { profile: Profile | null }) {
   const location = useStore((s) => s.location),
     setLocation = useStore((s) => s.setLocation);
   const [open, setOpen] = useState(false),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [mapSelection, setMapSelection] = useState<MapLocation | null>(null);
   const notify = useToast();
   const addresses = useQuery<Address[]>(
     open && profile?.role === "CUSTOMER" ? "addresses" : null,
@@ -95,6 +97,38 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
             <LocateFixed size={16} />
             {busy ? "Finding your location…" : "Use my current location"}
           </Button>
+          <GoogleMap
+            value={
+              mapSelection ||
+              (location
+                ? {
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                  }
+                : null)
+            }
+            onChange={setMapSelection}
+            enableSearch
+            height="compact"
+          />
+          {mapSelection && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setLocation({
+                  latitude: mapSelection.latitude,
+                  longitude: mapSelection.longitude,
+                  label: mapSelection.address || "Selected map location",
+                });
+                setMapSelection(null);
+                setOpen(false);
+              }}
+            >
+              Confirm map location
+            </Button>
+          )}
           {addresses.data?.map((a) => (
             <button
               key={a.id}
