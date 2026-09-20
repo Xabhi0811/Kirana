@@ -19,7 +19,6 @@ import { api } from "@/lib/api-client";
 import { useStore } from "@/lib/store";
 import type { Address } from "@/lib/types";
 import { useProfile } from "./shell";
-import { browserSupabase } from "@/lib/supabase/client";
 export function AuthPage({
   mode,
   oauthError,
@@ -86,14 +85,6 @@ export function AuthPage({
             ? "Join the shops and people around you."
             : "Your local marketplace is just a step away."}
         </p>
-        {(mode === "login" || register) && (
-          <>
-            <GoogleAuthButton />
-            <div className="auth-divider">
-              <span>or continue with email</span>
-            </div>
-          </>
-        )}
         {oauthError && (
           <p role="alert" className="field-error auth-error">
             {oauthError}
@@ -125,8 +116,12 @@ export function AuthPage({
               return;
             }
             if (register) {
-              notify((data as { message: string }).message);
-              router.push("/login");
+              router.push(
+                (data as { role?: string }).role === "SHOPKEEPER"
+                  ? "/shopkeeper"
+                  : "/",
+              );
+              router.refresh();
             } else {
               router.push(
                 mode === "login" &&
@@ -138,45 +133,7 @@ export function AuthPage({
             }
           }}
         />
-        {mode === "login" && (
-          <div className="mt-5">
-            <Button
-              type="button"
-              variant="ghost"
-              aria-expanded={showConfirmationForm}
-              onClick={() => setShowConfirmationForm(!showConfirmationForm)}
-            >
-              Resend confirmation email
-            </Button>
-            {showConfirmationForm && (
-              <div className="mt-5">
-                <p className="muted mb-5">
-                  Enter the email you registered with. Open the new confirmation
-                  link in this browser, then sign in.
-                </p>
-                <EntityForm
-                  schema={z.object({ email: z.email() })}
-                  defaults={{ email: "" }}
-                  fields={[
-                    { name: "email", label: "Account email", type: "email" },
-                  ]}
-                  path="auth/resend-confirmation"
-                  submitLabel="Send confirmation link"
-                  onSaved={(data) =>
-                    setConfirmationMessage(
-                      (data as { message: string }).message,
-                    )
-                  }
-                />
-                {confirmationMessage && (
-                  <p role="status" className="muted mt-5">
-                    {confirmationMessage}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+
         {mode === "login" && (
           <div className="auth-links">
             <Link href="/register">Create an account</Link>
@@ -192,85 +149,7 @@ export function AuthPage({
     </div>
   );
 }
-function GoogleAuthButton() {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState<string>();
-  async function signIn() {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-      if (!supabaseUrl || !publishableKey)
-        throw new Error("Supabase is not configured.");
-      const settingsResponse = await fetch(`${supabaseUrl}/auth/v1/settings`, {
-        headers: { apikey: publishableKey },
-        cache: "no-store",
-      });
-      if (!settingsResponse.ok)
-        throw new Error("Supabase Auth settings are unavailable.");
-      const settings = (await settingsResponse.json()) as {
-        external?: { google?: boolean };
-      };
-      if (!settings.external?.google) {
-        setBusy(false);
-        setError(
-          "Google sign-in is not enabled in Supabase yet. Enable the Google provider or use email instead.",
-        );
-        return;
-      }
-      const { error: providerError } =
-        await browserSupabase().auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: `${window.location.origin}/auth/callback?flow=google`,
-          },
-        });
-      if (providerError) throw providerError;
-    } catch {
-      setBusy(false);
-      setError(
-        "Google sign-in could not start. Check your connection or use email instead.",
-      );
-    }
-  }
-  return (
-    <div>
-      <Button
-        type="button"
-        variant="outline"
-        className="google-auth-button"
-        disabled={busy}
-        onClick={signIn}
-      >
-        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18">
-          <path
-            fill="#4285F4"
-            d="M21.6 12.2c0-.7-.1-1.5-.2-2.2H12v4.3h5.4a4.6 4.6 0 0 1-2 3v2.8h3.6c2-1.9 3.2-4.6 3.2-7.9Z"
-          />
-          <path
-            fill="#34A853"
-            d="M12 22c2.8 0 5.2-.9 7-2.5l-3.5-2.8a6.4 6.4 0 0 1-9.5-3.4H2.4v2.9A10.6 10.6 0 0 0 12 22Z"
-          />
-          <path
-            fill="#FBBC05"
-            d="M6 13.3a6.4 6.4 0 0 1 0-4.1V6.3H2.4a10.6 10.6 0 0 0 0 9.9L6 13.3Z"
-          />
-          <path
-            fill="#EA4335"
-            d="M12 5.8c1.6 0 3 .5 4.1 1.6l3.1-3A10.4 10.4 0 0 0 2.4 6.3L6 9.2A6.3 6.3 0 0 1 12 5.8Z"
-          />
-        </svg>
-        {busy ? "Connecting to Google…" : "Continue with Google"}
-      </Button>
-      {error && (
-        <p role="alert" className="field-error mt-5">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
+
 export function ProfilePage() {
   const profile = useProfile(),
     router = useRouter(),

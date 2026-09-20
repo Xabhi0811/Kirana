@@ -1,35 +1,23 @@
 "use client";
-import { useEffect } from "react";
-import { browserSupabase } from "@/lib/supabase/client";
+import { useEffect, useRef } from "react";
+
+/**
+ * Polling-based replacement for Supabase Realtime.
+ * Calls `onChange` at a regular interval to refresh data.
+ */
 export function useRealtime(
   table: string,
   onChange: () => void,
   filter?: string,
 ) {
+  const savedCallback = useRef(onChange);
+  savedCallback.current = onChange;
+
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) return;
-    const db = browserSupabase();
-    const channel = db
-      .channel(`${table}:${filter || "all"}`, {
-        config: { postgres_changes_options: { wait: true } },
-      })
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table, ...(filter ? { filter } : {}) },
-        onChange,
-      );
-    let disposed = false;
-    void db.realtime
-      .setAuth()
-      .then(() => {
-        if (!disposed) channel.subscribe();
-      })
-      .catch(() => {
-        /* The query remains usable if realtime is unavailable. */
-      });
-    return () => {
-      disposed = true;
-      void db.removeChannel(channel);
-    };
-  }, [table, filter, onChange]);
+    // Poll every 5 seconds for changes
+    const interval = setInterval(() => {
+      savedCallback.current();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [table, filter]);
 }

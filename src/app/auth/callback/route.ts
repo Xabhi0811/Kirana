@@ -1,86 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { serverSupabase } from "@/lib/supabase/server";
 export async function GET(request: NextRequest) {
-  const url = new URL(request.url),
-    code = url.searchParams.get("code"),
-    googleFlow = url.searchParams.get("flow") === "google";
-  const loginFailure = (message: string) => {
-    const target = new URL("/login", request.url);
-    target.searchParams.set("error", message);
-    return NextResponse.redirect(target);
-  };
-  if (url.searchParams.has("error"))
-    return loginFailure(
-      googleFlow
-        ? "Google sign-in was cancelled or could not be completed."
-        : "This authentication link is invalid or has expired.",
-    );
-  if (code) {
-    const db = await serverSupabase();
-    const flowId = url.searchParams.get("sb_flow_id");
-    const { error } = await db.auth.exchangeCodeForSession(
-      code,
-      flowId ? { flowId } : undefined,
-    );
-    if (error) {
-      // Never log authorization codes, cookies, tokens or provider messages.
-      console.warn("Auth callback exchange failed", {
-        code: error.code,
-        status: error.status,
-        name: error.name,
-      });
-      const restart =
-        error.name === "AuthPKCECodeVerifierMissingError" ||
-        ["bad_code_verifier", "flow_state_not_found", "flow_state_expired"].includes(
-          error.code || "",
-        );
-      return loginFailure(
-        restart
-          ? "This sign-in attempt has expired or its browser cookie is missing. Start sign-in again in this same browser and keep cookies enabled."
-          : "The sign-in session could not be established. Start sign-in again. If it fails again, contact support with code: " +
-              (error.code || "session_exchange_failed"),
-      );
-    }
-    if (!error && googleFlow) {
-      const {
-        data: { user },
-      } = await db.auth.getUser();
-      const { data: profile, error: profileError } = user
-        ? await db
-            .from("users")
-            .select("role,status")
-            .eq("id", user.id)
-            .maybeSingle()
-        : { data: null, error: null };
-      if (profileError || !profile) {
-        await db.auth.signOut();
-        return loginFailure(
-          "Your Google account was verified, but your Kirana profile could not be created.",
-        );
-      }
-      if (profile.status !== "ACTIVE") {
-        await db.auth.signOut();
-        return loginFailure(
-          "Your account is suspended. Contact customer support.",
-        );
-      }
-      return NextResponse.redirect(
-        new URL(
-          profile.role === "SHOPKEEPER"
-            ? "/shopkeeper"
-            : profile.role === "ADMIN"
-              ? "/admin"
-              : "/",
-          request.url,
-        ),
-      );
-    }
-    if (!error)
-      return NextResponse.redirect(new URL("/reset-password", request.url));
-  }
-  return loginFailure(
-    googleFlow
-      ? "Google sign-in could not be completed. Please try again."
-      : "This authentication link is invalid or has expired.",
+  // OAuth and code exchange are no longer used with custom JWT auth.
+  // Redirect to login page.
+  const target = new URL("/login", request.url);
+  target.searchParams.set(
+    "error",
+    "This authentication link is no longer supported. Please sign in with email and password.",
   );
+  return NextResponse.redirect(target);
 }

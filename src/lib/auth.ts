@@ -1,21 +1,34 @@
 import "server-only";
 import { redirect } from "next/navigation";
-import { serverSupabase, configured } from "./supabase/server";
+import { connectDB } from "./db";
+import { User } from "./models";
+import { getAuthUserId } from "./auth-utils";
 import type { Profile, Role } from "./types";
+
+export function configured(): boolean {
+  return !!process.env.MONGODB_URI;
+}
+
 export async function currentProfile(): Promise<Profile | null> {
   if (!configured()) return null;
-  const db = await serverSupabase();
-  const {
-    data: { user },
-  } = await db.auth.getUser();
+  const userId = await getAuthUserId();
+  if (!userId) return null;
+  await connectDB();
+  const user = await User.findById(userId)
+    .select("name email phone role avatar_url status")
+    .lean();
   if (!user) return null;
-  const { data } = await db
-    .from("users")
-    .select("id,name,email,phone,role,avatar_url,status")
-    .eq("id", user.id)
-    .single();
-  return data as Profile | null;
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    avatar_url: user.avatar_url,
+    status: user.status,
+  };
 }
+
 export async function requireRole(roles: Role[]) {
   const p = await currentProfile();
   if (!p) redirect("/login");

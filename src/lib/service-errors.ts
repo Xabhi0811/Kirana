@@ -1,11 +1,31 @@
 export const databaseSetupMessage =
-  "Kirana database setup is incomplete. Apply all pending Supabase migrations; if tables already exist, check the API schema cache.";
+  "Kirana database setup is incomplete. Check your MongoDB connection and ensure all collections are initialized.";
 
-export function missingDatabaseObject(code?: string) {
-  return ["PGRST205", "PGRST202", "42P01", "42883"].includes(code || "");
+export function isDuplicateKeyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: number }).code === 11000
+  );
 }
 
-// Map provider codes, never expose SQL, tokens or raw provider diagnostics.
+export function mongoErrorMessage(error: unknown): string | null {
+  if (isDuplicateKeyError(error)) {
+    return "A record with these details already exists. Phone numbers must be unique and orders can be reviewed only once.";
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name: string }).name === "ValidationError"
+  ) {
+    return "Invalid data provided. Check all fields and try again.";
+  }
+  return null;
+}
+
+// Map auth failures to user-friendly messages.
 export function authFailure(
   error: { code?: string; status?: number },
   operation: "login" | "register",
@@ -14,51 +34,26 @@ export function authFailure(
     return {
       status: 429,
       message:
-        "Too many attempts or emails sent. Wait a few minutes before trying again.",
+        "Too many attempts. Wait a few minutes before trying again.",
     };
   switch (error.code) {
-    case "email_not_confirmed":
-      return {
-        status: 403,
-        message:
-          "Your email is not confirmed yet. Open the confirmation link in your inbox or spam folder, or resend it below.",
-      };
     case "invalid_credentials":
       return {
         status: 401,
         message:
-          "Incorrect email or password. Use the account you registered, or reset your password.",
+          "Incorrect email or password. Check your credentials and try again.",
       };
-    case "email_address_not_authorized":
+    case "email_exists":
       return {
-        status: 503,
+        status: 409,
         message:
-          "Signup email delivery is restricted. The project owner must configure Supabase SMTP for public registration.",
-      };
-    case "signup_disabled":
-    case "email_provider_disabled":
-      return {
-        status: 503,
-        message:
-          "Email signup is disabled in this Supabase project. Enable the email provider and signups.",
-      };
-    case "email_address_invalid":
-      return {
-        status: 400,
-        message:
-          "Use a valid real email address. Supabase may reject example or test email domains.",
+          "An account with this email already exists. Try signing in instead.",
       };
     case "weak_password":
       return {
         status: 400,
         message:
-          "This password does not meet the project's security requirements. Choose a stronger password.",
-      };
-    case "unexpected_failure":
-      return {
-        status: 503,
-        message:
-          "Supabase could not complete authentication. Check database migrations, signup triggers and Auth logs.",
+          "This password does not meet the security requirements. Choose a stronger password.",
       };
     default:
       return {
@@ -70,8 +65,8 @@ export function authFailure(
               : 400,
         message:
           operation === "login"
-            ? "Sign-in failed. Check your credentials and email confirmation, then try again."
-            : "Registration failed. Check your details and the Supabase Auth logs, then try again.",
+            ? "Sign-in failed. Check your credentials and try again."
+            : "Registration failed. Check your details and try again.",
       };
   }
 }

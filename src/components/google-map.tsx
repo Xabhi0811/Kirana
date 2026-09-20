@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LocateFixed } from "lucide-react";
+import { LocateFixed, Search } from "lucide-react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import type { Shop } from "@/lib/types";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 export type MapLocation = {
   latitude: number;
@@ -70,6 +71,10 @@ export function GoogleMap({
     searchNode = useRef<HTMLDivElement>(null),
     onChangeRef = useRef(onChange),
     onShopSelectRef = useRef(onShopSelect),
+    mapInstanceRef = useRef<google.maps.Map | null>(null),
+    selectionMarkerRef = useRef<google.maps.Marker | null>(null),
+    [searchQuery, setSearchQuery] = useState(""),
+    [searching, setSearching] = useState(false),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
     [locating, setLocating] = useState(false);
@@ -101,33 +106,81 @@ export function GoogleMap({
             : Promise.resolve(null),
         ]);
         if (cancelled || !mapNode.current) return;
-        const fallback = { lat: 12.9716, lng: 77.5946 };
-        const center =
-          valueLatitude != null && valueLongitude != null
-            ? { lat: valueLatitude, lng: valueLongitude }
-            : shops[0]
-              ? { lat: shops[0].latitude, lng: shops[0].longitude }
-              : fallback;
+        let center = { lat: 26.2124, lng: 78.1772 }; // Default to Gwalior
+        let initialZoom = 14;
+
+        if (valueLatitude != null && valueLongitude != null) {
+          center = { lat: valueLatitude, lng: valueLongitude };
+          initialZoom = 14;
+        } else if (shops[0]) {
+          center = { lat: shops[0].latitude, lng: shops[0].longitude };
+          initialZoom = 13;
+        } else {
+          try {
+            const locRes = await fetch("/api/locate");
+            if (locRes.ok) {
+              const data = await locRes.json();
+              if (data.latitude && data.longitude) {
+                center = { lat: Number(data.latitude), lng: Number(data.longitude) };
+                initialZoom = 13;
+              }
+            }
+          } catch {
+            // Fallback to India center
+          }
+        }
+
         const map = new Map(mapNode.current, {
           center,
-          zoom: valueLatitude != null || shops.length ? 14 : 11,
+          zoom: initialZoom,
           clickableIcons: false,
           fullscreenControl: false,
           mapTypeControl: false,
           streetViewControl: false,
         });
+        mapInstanceRef.current = map;
         const info = new InfoWindow();
         const bounds = new google.maps.LatLngBounds();
 
+        function attachMarker(point: google.maps.LatLng | google.maps.LatLngLiteral) {
+          if (!selectionMarkerRef.current && mapInstanceRef.current) {
+            const m = new google.maps.Marker({
+              map: mapInstanceRef.current,
+              position: point,
+              title: "Drag me to your exact location",
+              label: primaryLabel,
+              draggable: true,
+              zIndex: 10,
+            });
+            m.addListener("dragend", async (e: google.maps.MapMouseEvent) => {
+              const pt = e.latLng;
+              if (!pt) return;
+              const lat = pt.lat();
+              const lng = pt.lng();
+              let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+              try {
+                if (typeof google !== "undefined" && google.maps?.Geocoder) {
+                  const geocoder = new google.maps.Geocoder();
+                  const res = await geocoder.geocode({ location: { lat, lng } });
+                  if (res.results && res.results[0]) {
+                    address = res.results[0].formatted_address;
+                  }
+                }
+              } catch {
+                // Ignore
+              }
+              onChangeRef.current?.({ latitude: lat, longitude: lng, address });
+            });
+            selectionMarkerRef.current = m;
+          } else if (selectionMarkerRef.current) {
+            selectionMarkerRef.current.setPosition(point);
+            selectionMarkerRef.current.setDraggable(true);
+          }
+        }
+
         if (valueLatitude != null && valueLongitude != null) {
           const point = { lat: valueLatitude, lng: valueLongitude };
-          new google.maps.Marker({
-            map,
-            position: point,
-            title: "Selected location",
-            label: primaryLabel,
-            zIndex: 10,
-          });
+          attachMarker(point);
           bounds.extend(point);
           if (deliveryRadiusKm && deliveryRadiusKm > 0)
             new google.maps.Circle({
@@ -186,13 +239,33 @@ export function GoogleMap({
         if (onChangeRef.current) {
           const listener = map.addListener(
             "click",
-            (event: google.maps.MapMouseEvent) => {
+            async (event: google.maps.MapMouseEvent) => {
               const point = event.latLng;
-              if (point)
+              if (point) {
+                const lat = point.lat();
+                const lng = point.lng();
+
+                attachMarker(point);
+
+                let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+                try {
+                  if (typeof google !== "undefined" && google.maps?.Geocoder) {
+                    const geocoder = new google.maps.Geocoder();
+                    const res = await geocoder.geocode({ location: { lat, lng } });
+                    if (res.results && res.results[0]) {
+                      address = res.results[0].formatted_address;
+                    }
+                  }
+                } catch {
+                  // Geocode is optional
+                }
+
                 onChangeRef.current?.({
-                  latitude: point.lat(),
-                  longitude: point.lng(),
+                  latitude: lat,
+                  longitude: lng,
+                  address,
                 });
+              }
             },
           );
           cleanups.push(() => listener.remove());
@@ -268,33 +341,271 @@ export function GoogleMap({
     shops,
     primaryLabel,
     valueLatitude,
-    valueLongitude,
   ]);
 
-  function locate() {
-    if (!navigator.geolocation) {
-      setError("Geolocation is not available in this browser.");
+  useEffect(() => {
+    if (mapInstanceRef.current && valueLatitude != null && valueLongitude != null && typeof google !== "undefined") {
+      const pt = new google.maps.LatLng(valueLatitude, valueLongitude);
+      mapInstanceRef.current.panTo(pt);
+      mapInstanceRef.current.setZoom(15);
+      if (selectionMarkerRef.current) {
+        selectionMarkerRef.current.setPosition(pt);
+        selectionMarkerRef.current.setDraggable(true);
+      } else {
+        const m = new google.maps.Marker({
+          map: mapInstanceRef.current,
+          position: pt,
+          title: "Drag me to your exact location",
+          label: primaryLabel,
+          draggable: true,
+          zIndex: 10,
+        });
+        m.addListener("dragend", async (e: google.maps.MapMouseEvent) => {
+          const point = e.latLng;
+          if (!point) return;
+          const lat = point.lat();
+          const lng = point.lng();
+          let address = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+          try {
+            if (typeof google !== "undefined" && google.maps?.Geocoder) {
+              const geocoder = new google.maps.Geocoder();
+              const res = await geocoder.geocode({ location: { lat, lng } });
+              if (res.results && res.results[0]) {
+                address = res.results[0].formatted_address;
+              }
+            }
+          } catch {
+            // Ignore
+          }
+          onChangeRef.current?.({ latitude: lat, longitude: lng, address });
+        });
+        selectionMarkerRef.current = m;
+      }
+    }
+  }, [valueLatitude, valueLongitude, primaryLabel]);
+
+  async function locate() {
+    setLocating(true);
+    setError(null);
+    try {
+      const getBrowserCoords = (): Promise<{ lat: number; lng: number } | null> => {
+        return new Promise((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 },
+          );
+        });
+      };
+
+      let coords = await getBrowserCoords();
+
+      if (!coords) {
+        try {
+          const res = await fetch("/api/locate");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              coords = { lat: Number(data.latitude), lng: Number(data.longitude) };
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (!coords) {
+        setLocating(false);
+        setError("Could not detect location. Please search your area or click on the map.");
+        return;
+      }
+
+      if (mapInstanceRef.current && typeof google !== "undefined") {
+        const point = new google.maps.LatLng(coords.lat, coords.lng);
+        mapInstanceRef.current.panTo(point);
+        mapInstanceRef.current.setZoom(15);
+        if (!selectionMarkerRef.current) {
+          selectionMarkerRef.current = new google.maps.Marker({
+            map: mapInstanceRef.current,
+            position: point,
+            title: "Selected location",
+            label: primaryLabel,
+            zIndex: 10,
+          });
+        } else {
+          selectionMarkerRef.current.setPosition(point);
+        }
+      }
+
+      let address = `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`;
+      try {
+        if (typeof google !== "undefined" && google.maps?.Geocoder) {
+          const geocoder = new google.maps.Geocoder();
+          const gRes = await geocoder.geocode({ location: { lat: coords.lat, lng: coords.lng } });
+          if (gRes.results && gRes.results[0]) {
+            address = gRes.results[0].formatted_address;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+
+      onChangeRef.current?.({
+        latitude: coords.lat,
+        longitude: coords.lng,
+        address,
+      });
+    } catch {
+      setError("Could not detect location.");
+    } finally {
+      setLocating(false);
+    }
+  }
+
+  async function handleSearch(queryToSearch?: string) {
+    const q = (queryToSearch ?? searchQuery).trim();
+    if (!q) return;
+    setSearching(true);
+    setError(null);
+    try {
+      if (typeof window !== "undefined" && window.google?.maps?.Geocoder) {
+        const geocoder = new window.google.maps.Geocoder();
+        const res = await geocoder.geocode({ address: q, componentRestrictions: { country: "IN" } });
+        if (res.results && res.results[0]) {
+          const loc = res.results[0].geometry.location;
+          const lat = loc.lat();
+          const lng = loc.lng();
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.panTo(loc);
+            mapInstanceRef.current.setZoom(15);
+            if (!selectionMarkerRef.current) {
+              selectionMarkerRef.current = new window.google.maps.Marker({
+                map: mapInstanceRef.current,
+                position: loc,
+                title: "Selected location",
+                label: primaryLabel,
+                zIndex: 10,
+              });
+            } else {
+              selectionMarkerRef.current.setPosition(loc);
+            }
+          }
+          onChangeRef.current?.({
+            latitude: lat,
+            longitude: lng,
+            address: res.results[0].formatted_address,
+          });
+          setSearching(false);
+          return;
+        }
+      }
+
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ", India")}&limit=1`,
+      );
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        if (mapInstanceRef.current && window.google?.maps) {
+          const point = new window.google.maps.LatLng(lat, lng);
+          mapInstanceRef.current.panTo(point);
+          mapInstanceRef.current.setZoom(15);
+          if (!selectionMarkerRef.current) {
+            selectionMarkerRef.current = new window.google.maps.Marker({
+              map: mapInstanceRef.current,
+              position: point,
+              title: "Selected location",
+              label: primaryLabel,
+              zIndex: 10,
+            });
+          } else {
+            selectionMarkerRef.current.setPosition(point);
+          }
+        }
+        onChangeRef.current?.({
+          latitude: lat,
+          longitude: lng,
+          address: data[0].display_name,
+        });
+        setSearching(false);
+        return;
+      }
+      setError("Location not found. Try another search or click on the map.");
+    } catch {
+      setError("Could not search location. Please click on the map or enter coordinates.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  const [predictions, setPredictions] = useState<
+    Array<{ placeId: string; description: string; mainText: string; secondaryText: string }>
+  >([]);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setPredictions([]);
       return;
     }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        onChange?.({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        setLocating(false);
-      },
-      (locationError) => {
-        setLocating(false);
-        setError(
-          locationError.code === 1
-            ? "Location permission was denied. Search or enter the location manually."
-            : "Your location is unavailable. Search or enter it manually.",
-        );
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/places?input=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.predictions)) {
+            setPredictions(data.predictions);
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  async function selectPrediction(placeId: string) {
+    setSearching(true);
+    setPredictions([]);
+    try {
+      const res = await fetch(`/api/places?placeId=${encodeURIComponent(placeId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.latitude && data.longitude) {
+          const lat = data.latitude;
+          const lng = data.longitude;
+          const addr = data.address || "Selected location";
+          setSearchQuery(addr);
+          if (mapInstanceRef.current && typeof google !== "undefined") {
+            const pt = new google.maps.LatLng(lat, lng);
+            mapInstanceRef.current.panTo(pt);
+            mapInstanceRef.current.setZoom(15);
+            if (selectionMarkerRef.current) {
+              selectionMarkerRef.current.setPosition(pt);
+            } else {
+              selectionMarkerRef.current = new google.maps.Marker({
+                map: mapInstanceRef.current,
+                position: pt,
+                title: "Selected location",
+                label: primaryLabel,
+                zIndex: 10,
+              });
+            }
+          }
+          onChangeRef.current?.({
+            latitude: lat,
+            longitude: lng,
+            address: addr,
+          });
+        }
+      }
+    } catch {
+      // Ignore
+    } finally {
+      setSearching(false);
+    }
   }
 
   if (!apiKey)
@@ -306,8 +617,55 @@ export function GoogleMap({
     );
   return (
     <div className="google-map-panel">
-      {enableSearch && placesEnabled && (
-        <div ref={searchNode} className="place-search" />
+      {enableSearch && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (predictions.length > 0) {
+              void selectPrediction(predictions[0].placeId);
+            } else {
+              void handleSearch();
+            }
+          }}
+          className="map-search-bar"
+        >
+          <div className="search-container">
+            <Input
+              type="text"
+              placeholder="Search your city or colony (e.g. Gwalior, Thatipur, Lashkar)…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {predictions.length > 0 && (
+              <div className="search-dropdown">
+                {predictions.map((p) => (
+                  <button
+                    key={p.placeId}
+                    type="button"
+                    className="search-prediction-item"
+                    onClick={() => void selectPrediction(p.placeId)}
+                  >
+                    <Search size={14} style={{ marginTop: "3px", flexShrink: 0, color: "#64748b" }} />
+                    <div>
+                      <div className="search-prediction-main">{p.mainText}</div>
+                      {p.secondaryText && (
+                        <div className="search-prediction-sub">{p.secondaryText}</div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={searching || !searchQuery.trim()}
+          >
+            <Search size={15} />
+            {searching ? "Searching…" : "Search"}
+          </Button>
+        </form>
       )}
       {showCurrentLocation && onChange && (
         <Button
@@ -332,10 +690,8 @@ export function GoogleMap({
         aria-label="Interactive Google map"
       />
       {onChange && (
-        <small className="muted">
-          {enableSearch && placesEnabled
-            ? "Search above or click the map to choose coordinates."
-            : "Click the map to choose coordinates, or enter them manually."}
+        <small className="muted" style={{ display: "block", marginTop: "6px", fontWeight: 500 }}>
+          🎯 Drag the red pin or click anywhere on the map to pinpoint your exact home/shop.
         </small>
       )}
     </div>

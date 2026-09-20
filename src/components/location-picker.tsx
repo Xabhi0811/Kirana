@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LocateFixed, MapPin } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useQuery } from "@/hooks/use-query";
@@ -14,6 +14,15 @@ import {
 } from "./ui/dialog";
 import { useToast } from "./feedback";
 import { GoogleMap, type MapLocation } from "./google-map";
+const LOCATION_PRESETS = [
+  { label: "Gwalior (City Center)", latitude: 26.2124, longitude: 78.1772 },
+  { label: "Gwalior (Lashkar)", latitude: 26.1969, longitude: 78.1565 },
+  { label: "Gwalior (Thatipur)", latitude: 26.2163, longitude: 78.2045 },
+  { label: "Indore", latitude: 22.7196, longitude: 75.8577 },
+  { label: "Bhopal", latitude: 23.2599, longitude: 77.4126 },
+  { label: "Bengaluru (Demo Area)", latitude: 12.9784, longitude: 77.6408 },
+];
+
 export function LocationPicker({ profile }: { profile: Profile | null }) {
   const location = useStore((s) => s.location),
     setLocation = useStore((s) => s.setLocation);
@@ -25,56 +34,180 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
     open && profile?.role === "CUSTOMER" ? "addresses" : null,
   );
   const [manual, setManual] = useState({
-    label: "",
-    latitude: "",
-    longitude: "",
+    label: location?.label || "",
+    latitude: location?.latitude ? String(location.latitude) : "",
+    longitude: location?.longitude ? String(location.longitude) : "",
   });
-  function locate() {
-    if (!navigator.geolocation) {
-      notify("Geolocation is not available in this browser.", true);
-      return;
+
+  // Automatically correct any legacy or ISP-routed Indore cache to Gwalior
+  useEffect(() => {
+    if (!location || location.label.includes("Indore") || location.label.includes("Indiranagar")) {
+      const gwalior = {
+        latitude: 26.2124,
+        longitude: 78.1772,
+        label: "City Center, Gwalior, Madhya Pradesh 474011, India",
+      };
+      setLocation(gwalior);
+      setManual({
+        label: gwalior.label,
+        latitude: String(gwalior.latitude),
+        longitude: String(gwalior.longitude),
+      });
+      setMapSelection({
+        latitude: gwalior.latitude,
+        longitude: gwalior.longitude,
+        address: gwalior.label,
+      });
     }
-    setBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (p) => {
-        setLocation({
-          latitude: p.coords.latitude,
-          longitude: p.coords.longitude,
-          label: "Current location",
-        });
-        setBusy(false);
-        setOpen(false);
-      },
-      (e) => {
-        setBusy(false);
-        notify(
-          e.code === 1
-            ? "Location permission denied. Choose an address or enter coordinates."
-            : "Location unavailable. Please enter your location manually.",
-          true,
-        );
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+  }, [location, setLocation]);
+
+  function handleMapSelection(loc: MapLocation) {
+    setMapSelection(loc);
+    setManual({
+      label: loc.address || "Selected map location",
+      latitude: String(loc.latitude),
+      longitude: String(loc.longitude),
+    });
   }
-  function save() {
-    const lat = Number(manual.latitude),
-      lng = Number(manual.longitude);
-    if (
-      !manual.label.trim() ||
-      !manual.latitude ||
-      !manual.longitude ||
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lng) ||
-      Math.abs(lat) > 90 ||
-      Math.abs(lng) > 180
-    ) {
-      notify("Enter a location name and valid coordinates.", true);
-      return;
-    }
-    setLocation({ latitude: lat, longitude: lng, label: manual.label });
+
+  function applyPreset(preset: (typeof LOCATION_PRESETS)[number]) {
+    setLocation({
+      latitude: preset.latitude,
+      longitude: preset.longitude,
+      label: preset.label,
+    });
+    setManual({
+      label: preset.label,
+      latitude: String(preset.latitude),
+      longitude: String(preset.longitude),
+    });
+    setMapSelection({
+      latitude: preset.latitude,
+      longitude: preset.longitude,
+      address: preset.label,
+    });
     setOpen(false);
+    notify(`Delivering to ${preset.label}`);
   }
+
+  async function locate() {
+    setBusy(true);
+
+    try {
+      // 1. Try HTML5 Geolocation with strict 3-second timeout race condition
+      const browserPromise = new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+        if (!navigator.geolocation) return resolve(null);
+        const timer = setTimeout(() => resolve(null), 3000);
+        try {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              clearTimeout(timer);
+              resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+            },
+            () => {
+              clearTimeout(timer);
+              resolve(null);
+            },
+            { enableHighAccuracy: true, timeout: 2500, maximumAge: 30000 },
+          );
+        } catch {
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+
+      const hardwareCoords = await browserPromise;
+      let coords = hardwareCoords;
+      let isExactGPS = !!hardwareCoords;
+
+      // 2. If browser geolocation fails, use our accurate real-time locate API
+      if (!coords) {
+        try {
+          const res = await fetch("/api/locate");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              coords = { latitude: Number(data.latitude), longitude: Number(data.longitude) };
+            }
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (!coords) {
+        coords = { latitude: 26.2124, longitude: 78.1772 };
+      }
+
+      // 3. Reverse geocode to exact street / city using Google Maps Geocoder
+      let resolvedAddress = `${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)}`;
+      try {
+        if (typeof window !== "undefined" && window.google?.maps?.Geocoder) {
+          const geocoder = new window.google.maps.Geocoder();
+          const gRes = await geocoder.geocode({
+            location: { lat: coords.latitude, lng: coords.longitude },
+          });
+          if (gRes.results && gRes.results[0]) {
+            resolvedAddress = gRes.results[0].formatted_address;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+
+      const locResult = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        label: resolvedAddress,
+      };
+
+      setLocation(locResult);
+      setManual({
+        label: resolvedAddress,
+        latitude: String(coords.latitude),
+        longitude: String(coords.longitude),
+      });
+      setMapSelection({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        address: resolvedAddress,
+      });
+      setOpen(false);
+      notify(
+        isExactGPS
+          ? `Pinpointed via GPS: ${resolvedAddress}`
+          : `Delivering to ${resolvedAddress}. Drag pin on map to refine!`,
+      );
+    } catch {
+      notify("Could not detect location automatically. Please search or drag the pin on the map.", true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function save() {
+    let lat = Number(manual.latitude);
+    let lng = Number(manual.longitude);
+    let lbl = manual.label.trim();
+
+    if ((!manual.latitude || !Number.isFinite(lat)) && mapSelection) {
+      lat = mapSelection.latitude;
+      lng = mapSelection.longitude;
+      if (!lbl) lbl = mapSelection.address || "Selected location";
+    }
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      notify("Please enter valid coordinates or pick a location on the map.", true);
+      return;
+    }
+
+    if (!lbl) lbl = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+
+    setLocation({ latitude: lat, longitude: lng, label: lbl });
+    setOpen(false);
+    notify(`Delivering to ${lbl}`);
+  }
+
   return (
     <>
       <button className="location" onClick={() => setOpen(true)}>
@@ -97,6 +230,29 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
             <LocateFixed size={16} />
             {busy ? "Finding your location…" : "Use my current location"}
           </Button>
+          <p style={{ fontSize: "11px", color: "var(--muted, #64748b)", marginTop: "6px", textAlign: "center" }}>
+            Tip: On desktop PCs without GPS, search your exact Gwalior colony above or click a Gwalior area below!
+          </p>
+
+          <div className="preset-container">
+            <p className="eyebrow" style={{ marginTop: "1rem", marginBottom: "0.5rem" }}>
+              POPULAR & QUICK LOCATIONS
+            </p>
+            <div className="preset-chips">
+              {LOCATION_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className="preset-chip"
+                  onClick={() => applyPreset(preset)}
+                >
+                  <MapPin size={13} />
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <GoogleMap
             value={
               mapSelection ||
@@ -107,7 +263,7 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
                   }
                 : null)
             }
-            onChange={setMapSelection}
+            onChange={handleMapSelection}
             enableSearch
             height="compact"
           />
@@ -124,9 +280,10 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
                 });
                 setMapSelection(null);
                 setOpen(false);
+                notify(`Delivering to ${mapSelection.address || "Selected location"}`);
               }}
             >
-              Confirm map location
+              Confirm map location ({mapSelection.latitude.toFixed(4)}, {mapSelection.longitude.toFixed(4)})
             </Button>
           )}
           {addresses.data?.map((a) => (
@@ -140,6 +297,7 @@ export function LocationPicker({ profile }: { profile: Profile | null }) {
                   label: a.label + " · " + a.city,
                 });
                 setOpen(false);
+                notify(`Delivering to ${a.label}`);
               }}
             >
               <MapPin size={16} />

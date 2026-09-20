@@ -4,7 +4,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { Send, MessageCircle, ImagePlus, CheckCheck } from "lucide-react";
 import { useQuery } from "@/hooks/use-query";
-import { browserSupabase } from "@/lib/supabase/client";
 import { api } from "@/lib/api-client";
 import type { ChatRoom, Message, Product } from "@/lib/types";
 import { date, money } from "@/lib/utils";
@@ -38,47 +37,16 @@ export function ChatPage({ initialRoom = "" }: { initialRoom?: string }) {
         .catch(() => {});
   }, [selected, rooms.refresh]);
   useEffect(() => {
-    if (!selected || !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) return;
-    const db = browserSupabase();
-    const channel = db
-      .channel("chat-room-" + selected, {
-        config: { postgres_changes_options: { wait: true } },
-      })
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "chat_messages",
-          filter: "chat_room_id=eq." + selected,
-        },
-        () => {
-          refreshMessages();
-          refreshRooms();
-          handleRead();
-        },
-      );
-    let disposed = false;
-    // Cookie-based login happens on the server. Load its session before joining:
-    // joining with the anonymous key can succeed but RLS filters every event.
-    void db.realtime
-      .setAuth()
-      .then(() => {
-        if (!disposed)
-          channel.subscribe((status) => setLive(status === "SUBSCRIBED"));
-      })
-      .catch(() => {
-        if (!disposed) setLive(false);
-      });
+    if (!selected) return;
+    setLive(true);
     handleRead();
+    // Poll for new messages every 3 seconds
     const poll = setInterval(() => {
       refreshMessages();
       refreshRooms();
-    }, 15000);
+    }, 3000);
     return () => {
-      disposed = true;
       clearInterval(poll);
-      void db.removeChannel(channel);
     };
   }, [selected, refreshMessages, refreshRooms, handleRead]);
   useEffect(() => {
@@ -160,7 +128,7 @@ export function ChatPage({ initialRoom = "" }: { initialRoom?: string }) {
                     : chosen?.shop_name}
                 </strong>
                 <span className="muted">
-                  {live ? "Live chat" : "Connecting…"}
+                  {live ? "Connected" : "Connecting…"}
                 </span>
               </div>
               <div className="chat-messages">
@@ -335,21 +303,8 @@ export function ChatPage({ initialRoom = "" }: { initialRoom?: string }) {
   );
 }
 function ChatImage({ path }: { path: string }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    const db = browserSupabase();
-    let cancelled = false;
-    void db.storage
-      .from("chat-images")
-      .createSignedUrl(path, 3600)
-      .then(({ data }) => {
-        if (!cancelled) setUrl(data?.signedUrl || "");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
-  return url ? (
+  const url = `/uploads/chat-images/${path}`;
+  return (
     <a href={url} target="_blank" rel="noopener noreferrer">
       <Image
         unoptimized
@@ -360,7 +315,5 @@ function ChatImage({ path }: { path: string }) {
         alt="Shared by a chat participant"
       />
     </a>
-  ) : (
-    <small>Loading shared image…</small>
   );
 }

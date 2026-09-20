@@ -1,5 +1,5 @@
 import { z } from "zod";
-const id = z.uuid();
+const id = z.string().min(1).max(36);
 const text = (max = 100) => z.string().trim().min(1).max(max);
 const requiredNumber = z
   .union([z.number(), z.string().trim().min(1)])
@@ -19,7 +19,9 @@ export const registerSchema = z.object({
     .regex(/[A-Z]/, "Include an uppercase letter")
     .regex(/[0-9]/, "Include a number"),
   phone: z.string().regex(/^\+?[0-9]{10,15}$/, "Enter a valid phone number"),
-  role: z.enum(["CUSTOMER", "SHOPKEEPER"]),
+  role: z
+    .enum(["CUSTOMER", "SHOPKEEPER", "ADMIN", "customer", "shop_owner", "admin", "SHOP_OWNER"])
+    .default("CUSTOMER"),
 });
 export const addressSchema = z.object({
   label: text(40),
@@ -34,6 +36,7 @@ export const shopSchema = z.object({
   name: text(120).min(2),
   description: z.string().max(2000),
   category_id: id,
+  address_id: id.nullable().optional(),
   address: text(500),
   ...coordinate,
   delivery_radius_km: z.coerce.number().positive().max(50),
@@ -45,7 +48,9 @@ export const shopSchema = z.object({
     .string()
     .regex(/^\d{2}:\d{2}(:\d{2})?$/)
     .refine((v) => Number(v.slice(0, 2)) < 24 && Number(v.slice(3, 5)) < 60),
-  status: z.enum(["OPEN", "CLOSED", "INACTIVE"]),
+  status: z
+    .enum(["OPEN", "CLOSED", "INACTIVE", "open", "closed", "inactive"])
+    .default("OPEN"),
   phone: z.string().max(20).nullable().optional(),
   email: z
     .union([z.email(), z.literal("")])
@@ -102,6 +107,7 @@ export const listItemSchema = z.object({
   list_id: id,
   product_id: id.nullable(),
   name: text(150),
+  product_name: text(150).optional(),
   quantity: z.coerce.number().int().min(1).max(999),
   unit: text(40),
 });
@@ -123,15 +129,24 @@ export const reviewSchema = z.object({
   comment: z.string().max(2000),
 });
 export const complaintSchema = z.object({
-  order_id: id.nullable(),
-  shop_id: id.nullable(),
+  order_id: id.nullable().optional(),
+  shop_id: id.nullable().optional(),
   subject: text(150),
   description: text(4000),
+  status: z
+    .enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "open", "in_progress", "resolved", "closed"])
+    .optional(),
+});
+export const productImageSchema = z.object({
+  product_id: id,
+  image_url: z.string().url(),
+  is_primary: z.boolean().default(false),
 });
 export const profileSchema = z.object({
   name: text().min(2),
   phone: z.string().regex(/^\+?[0-9]{10,15}$/),
   avatar_url: z.url().nullable().optional(),
+  profile_image: z.union([z.string().url(), z.literal("")]).nullable().optional(),
 });
 export const searchSchema = z.object({
   ...coordinate,

@@ -1,4 +1,4 @@
-export type Role = "CUSTOMER" | "SHOPKEEPER" | "ADMIN";
+export type Role = "CUSTOMER" | "SHOPKEEPER" | "ADMIN" | "customer" | "shop_owner" | "admin" | "SHOP_OWNER";
 export type OrderStatus =
   | "PLACED"
   | "ACCEPTED"
@@ -13,7 +13,8 @@ export interface Profile {
   phone: string | null;
   role: Role;
   avatar_url: string | null;
-  status: "ACTIVE" | "SUSPENDED";
+  profile_image?: string | null;
+  status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "active" | "inactive" | "suspended";
 }
 export interface Category {
   id: string;
@@ -53,6 +54,7 @@ export interface Shop {
   description: string;
   category_id: string;
   logo_url: string | null;
+  address_id?: string | null;
   address: string;
   phone: string | null;
   email: string | null;
@@ -61,11 +63,18 @@ export interface Shop {
   delivery_radius_km: number;
   open_time: string;
   close_time: string;
-  status: "OPEN" | "CLOSED" | "INACTIVE";
+  status: "OPEN" | "CLOSED" | "INACTIVE" | "open" | "closed" | "inactive";
   approval_status?: string;
   distance?: number;
   rating?: number;
   product_count?: number;
+}
+export interface ProductImage {
+  id: string;
+  product_id: string;
+  image_url: string;
+  is_primary: boolean;
+  created_at: string;
 }
 export interface Product {
   id: string;
@@ -78,6 +87,7 @@ export interface Product {
   price: number;
   stock_quantity: number;
   image_url: string | null;
+  images?: ProductImage[];
   is_active?: boolean;
   shop_name?: string;
   shop_status?: string;
@@ -97,6 +107,7 @@ export interface ListItem {
   list_id: string;
   product_id: string | null;
   name: string;
+  product_name?: string;
   quantity: number;
   unit: string;
 }
@@ -145,9 +156,11 @@ export interface Review {
 }
 export interface Complaint {
   id: string;
+  order_id?: string | null;
+  shop_id?: string | null;
   subject: string;
   description: string;
-  status: "OPEN" | "IN_PROGRESS" | "RESOLVED";
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | "open" | "in_progress" | "resolved" | "closed";
   created_at: string;
 }
 export interface ChatRoom {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { currentProfile } from "@/lib/auth";
-import { configured } from "@/lib/supabase/server";
+import { configured } from "@/lib/auth";
 import { Shell } from "@/components/shell";
 import "./globals.css";
 export const metadata: Metadata = {

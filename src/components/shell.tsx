@@ -223,7 +223,7 @@ function Inner({
         </header>
         {!connected && (
           <div className="connection-banner">
-            Connect your Supabase project using the variables in .env.example to
+            Connect your MongoDB database by setting MONGODB_URI in .env.local to
             enable the marketplace.
           </div>
         )}
