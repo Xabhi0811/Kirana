@@ -6,7 +6,6 @@ export default defineConfig([
   ...nextTypescript,
   globalIgnores([
     ".next/**",
-    ".local-postgres/**",
     "next-env.d.ts",
     "archive/prototype/**",
   ]),

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Polling-based replacement for Supabase Realtime.
+ * Polling-based refresh hook for application data.
  * Calls `onChange` at a regular interval to refresh data.
  */
 export function useRealtime(

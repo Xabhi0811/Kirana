@@ -643,23 +643,22 @@ export function GoogleMap({
   return (
     <div className="google-map-panel">
       {enableSearch && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (predictions.length > 0) {
-              void selectPrediction(predictions[0].placeId, predictions[0].description);
-            } else {
-              void handleSearch();
-            }
-          }}
-          className="map-search-bar"
-        >
+        <div className="map-search-bar">
           <div className="search-container">
             <Input
               type="text"
               placeholder="Search your city or colony (e.g. Gwalior, Thatipur, Lashkar)…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (predictions.length > 0) {
+                  void selectPrediction(predictions[0].placeId, predictions[0].description);
+                } else {
+                  void handleSearch();
+                }
+              }}
             />
             {predictions.length > 0 && (
               <div className="search-dropdown">
@@ -683,14 +682,21 @@ export function GoogleMap({
             )}
           </div>
           <Button
-            type="submit"
+            type="button"
             variant="outline"
             disabled={searching || !searchQuery.trim()}
+            onClick={() => {
+              if (predictions.length > 0) {
+                void selectPrediction(predictions[0].placeId, predictions[0].description);
+              } else {
+                void handleSearch();
+              }
+            }}
           >
             <Search size={15} />
             {searching ? "Searching…" : "Search"}
           </Button>
-        </form>
+        </div>
       )}
       {showCurrentLocation && onChange && (
         <Button

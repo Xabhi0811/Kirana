@@ -414,8 +414,6 @@ test("live browser cart checkout and two-participant chat", async ({
             : raw;
           if (data.event === "system")
             console.log("Realtime system:", JSON.stringify(data.payload));
-          if (data.event === "postgres_changes")
-            console.log("Realtime change received");
         } catch {
           /* Binary protocol frames are not logged. */
         }
