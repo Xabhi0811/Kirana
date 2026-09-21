@@ -979,6 +979,12 @@ async function execute(request: NextRequest, context: Context) {
           "Incorrect email or password. Check your credentials and try again.",
           401,
         );
+      if (!user.password_hash) {
+        throw new HttpError(
+          "This account is signed in with Google. Please use Continue with Google to sign in.",
+          400,
+        );
+      }
       const valid = await verifyPassword(data.password, user.password_hash);
       if (!valid)
         throw new HttpError(

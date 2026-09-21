@@ -469,76 +469,88 @@ export function GoogleMap({
     setSearching(true);
     setError(null);
     try {
-      if (typeof window !== "undefined" && window.google?.maps?.Geocoder) {
-        const geocoder = new window.google.maps.Geocoder();
-        const res = await geocoder.geocode({ address: q, componentRestrictions: { country: "IN" } });
-        if (res.results && res.results[0]) {
-          const loc = res.results[0].geometry.location;
-          const lat = loc.lat();
-          const lng = loc.lng();
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.panTo(loc);
-            mapInstanceRef.current.setZoom(15);
-            if (!selectionMarkerRef.current) {
-              selectionMarkerRef.current = new window.google.maps.Marker({
-                map: mapInstanceRef.current,
-                position: loc,
-                title: "Selected location",
-                label: primaryLabel,
-                zIndex: 10,
-              });
-            } else {
-              selectionMarkerRef.current.setPosition(loc);
+      // 1. Server-side geocode (chains Google Geocoding → Find Place → Nominatim)
+      try {
+        const res = await fetch(`/api/places?geocode=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.latitude && data.longitude) {
+            const lat = Number(data.latitude);
+            const lng = Number(data.longitude);
+            if (mapInstanceRef.current && typeof google !== "undefined") {
+              const point = new google.maps.LatLng(lat, lng);
+              mapInstanceRef.current.panTo(point);
+              mapInstanceRef.current.setZoom(15);
+              if (!selectionMarkerRef.current) {
+                selectionMarkerRef.current = new google.maps.Marker({
+                  map: mapInstanceRef.current,
+                  position: point,
+                  title: "Selected location",
+                  label: primaryLabel,
+                  zIndex: 10,
+                });
+              } else {
+                selectionMarkerRef.current.setPosition(point);
+              }
             }
+            onChangeRef.current?.({
+              latitude: lat,
+              longitude: lng,
+              address: data.address || q,
+            });
+            setSearching(false);
+            return;
           }
-          onChangeRef.current?.({
-            latitude: lat,
-            longitude: lng,
-            address: res.results[0].formatted_address,
-          });
-          setSearching(false);
-          return;
+        }
+      } catch {
+        // Server geocode failed, try client-side fallback
+      }
+
+      // 2. Client-side Google Geocoder fallback
+      if (typeof window !== "undefined" && window.google?.maps?.Geocoder) {
+        try {
+          const geocoder = new window.google.maps.Geocoder();
+          const res = await geocoder.geocode({ address: q, region: "in" });
+          if (res.results && res.results[0]) {
+            const loc = res.results[0].geometry.location;
+            const lat = loc.lat();
+            const lng = loc.lng();
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.panTo(loc);
+              mapInstanceRef.current.setZoom(15);
+              if (!selectionMarkerRef.current) {
+                selectionMarkerRef.current = new window.google.maps.Marker({
+                  map: mapInstanceRef.current,
+                  position: loc,
+                  title: "Selected location",
+                  label: primaryLabel,
+                  zIndex: 10,
+                });
+              } else {
+                selectionMarkerRef.current.setPosition(loc);
+              }
+            }
+            onChangeRef.current?.({
+              latitude: lat,
+              longitude: lng,
+              address: res.results[0].formatted_address,
+            });
+            setSearching(false);
+            return;
+          }
+        } catch {
+          // Client-side geocoder failed (API may not be enabled)
         }
       }
 
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ", India")}&limit=1`,
-      );
-      const data = await response.json();
-      if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lng = parseFloat(data[0].lon);
-        if (mapInstanceRef.current && window.google?.maps) {
-          const point = new window.google.maps.LatLng(lat, lng);
-          mapInstanceRef.current.panTo(point);
-          mapInstanceRef.current.setZoom(15);
-          if (!selectionMarkerRef.current) {
-            selectionMarkerRef.current = new window.google.maps.Marker({
-              map: mapInstanceRef.current,
-              position: point,
-              title: "Selected location",
-              label: primaryLabel,
-              zIndex: 10,
-            });
-          } else {
-            selectionMarkerRef.current.setPosition(point);
-          }
-        }
-        onChangeRef.current?.({
-          latitude: lat,
-          longitude: lng,
-          address: data[0].display_name,
-        });
-        setSearching(false);
-        return;
-      }
-      setError("Location not found. Try another search or click on the map.");
+      setError("Location not found. Try a more specific search or click directly on the map.");
     } catch {
       setError("Could not search location. Please click on the map or enter coordinates.");
     } finally {
       setSearching(false);
     }
   }
+
 
   const [predictions, setPredictions] = useState<
     Array<{ placeId: string; description: string; mainText: string; secondaryText: string }>
@@ -566,7 +578,7 @@ export function GoogleMap({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  async function selectPrediction(placeId: string) {
+  async function selectPrediction(placeId: string, description?: string) {
     setSearching(true);
     setPredictions([]);
     try {
@@ -599,14 +611,27 @@ export function GoogleMap({
             longitude: lng,
             address: addr,
           });
+          return;
         }
       }
+      // Place details failed — fall back to geocode search with the description text
+      if (description) {
+        setSearching(false);
+        await handleSearch(description);
+        return;
+      }
     } catch {
-      // Ignore
+      // Fall back to text search
+      if (description) {
+        setSearching(false);
+        await handleSearch(description);
+        return;
+      }
     } finally {
       setSearching(false);
     }
   }
+
 
   if (!apiKey)
     return (
@@ -622,7 +647,7 @@ export function GoogleMap({
           onSubmit={(e) => {
             e.preventDefault();
             if (predictions.length > 0) {
-              void selectPrediction(predictions[0].placeId);
+              void selectPrediction(predictions[0].placeId, predictions[0].description);
             } else {
               void handleSearch();
             }
@@ -643,7 +668,7 @@ export function GoogleMap({
                     key={p.placeId}
                     type="button"
                     className="search-prediction-item"
-                    onClick={() => void selectPrediction(p.placeId)}
+                    onClick={() => void selectPrediction(p.placeId, p.description)}
                   >
                     <Search size={14} style={{ marginTop: "3px", flexShrink: 0, color: "#64748b" }} />
                     <div>

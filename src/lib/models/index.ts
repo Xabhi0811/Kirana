@@ -22,7 +22,8 @@ export interface IUser extends Document {
   avatar_url: string | null;
   profile_image: string | null;
   status: "ACTIVE" | "INACTIVE" | "SUSPENDED" | "active" | "inactive" | "suspended";
-  password_hash: string;
+  password_hash?: string | null;
+  google_id?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -49,7 +50,8 @@ const userSchema = new Schema<IUser>(
       enum: ["ACTIVE", "INACTIVE", "SUSPENDED", "active", "inactive", "suspended"],
       default: "ACTIVE",
     },
-    password_hash: { type: String, required: true },
+    password_hash: { type: String, default: null },
+    google_id: { type: String, default: null },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
 );
@@ -62,6 +64,11 @@ userSchema.pre("save", function () {
 userSchema.index(
   { phone: 1 },
   { unique: true, sparse: true, partialFilterExpression: { phone: { $ne: null } } },
+);
+
+userSchema.index(
+  { google_id: 1 },
+  { unique: true, sparse: true, partialFilterExpression: { google_id: { $ne: null } } },
 );
 
 export const User = getModel<IUser>("User", userSchema);
