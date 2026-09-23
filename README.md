@@ -4,6 +4,8 @@ Kirana is a single full-stack Next.js marketplace for customers, shopkeepers, an
 
 ## Architecture
 
+
+
 ```text
 Next.js routes and server components
   -> custom JWT authentication and authorization
@@ -15,6 +17,8 @@ Next.js routes and server components
 - **Authentication:** Email/password and direct Google OAuth. User accounts and roles are stored in MongoDB.
 - **Maps:** Google Maps JavaScript API, Places API, and browser geolocation.
 - **Realtime refresh:** Client polling through the application API.
+
+
 
 There is no PostgreSQL, Supabase Database, Supabase Auth, Supabase Storage, or Supabase Realtime dependency in the current application.
 
