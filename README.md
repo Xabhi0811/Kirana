@@ -2,6 +2,8 @@
 
 **Kirana** is a full-stack, hyperlocal marketplace web application built with **Next.js 16**, **React 19**, **MongoDB (Mongoose)**, and **TypeScript**. It connects customers with nearby *kirana* (neighbourhood grocery) shops, enabling product discovery, price comparison, order placement, real-time chat, shopping lists, reviews, complaints, and full admin/shopkeeper management — all with **zero delivery or handling fees**.
 
+This README describes the checked-in code. MongoDB is the active backend; Supabase SQL is historical. See the implementation gaps section for behavior that is incomplete or not fully enforced.
+
 ---
 
 ## Table of Contents
@@ -38,6 +40,10 @@
 - [Running the App](#running-the-app)
 - [Quality Checks](#quality-checks)
 - [Demo Accounts](#demo-accounts)
+- [Runtime Scope and Historical Files](#runtime-scope-and-historical-files)
+- [API Contract and Request Examples](#api-contract-and-request-examples)
+- [Known Implementation Gaps](#known-implementation-gaps)
+- [Deployment and Troubleshooting](#deployment-and-troubleshooting)
 
 ---
 
@@ -70,12 +76,13 @@
                    │  Mongoose ODM
 ┌──────────────────▼───────────────────────────────────┐
 │                    MongoDB                           │
-│  15 collections · indexes · geospatial queries       │
+│  17 models · indexes · geospatial queries       │
 └──────────────────────────────────────────────────────┘
 ```
 
 **Key architectural decisions:**
-- **Single API route handler** — all CRUD operations are routed through one catch-all `[...path]/route.ts` (~1750 lines) that dispatches by URL segments and HTTP method.
+
+- **Single API route handler** — all CRUD operations are routed through one catch-all `[...path]/route.ts` that dispatches by URL segments and HTTP method.
 - **No ORM migrations** — Mongoose schemas auto-create collections and indexes on first connection.
 - **Custom JWT auth** — no third-party auth provider; bcryptjs for passwords, jose for JWT tokens, httpOnly cookies for sessions.
 - **Polling-based realtime** — the `useRealtime` hook polls every 5 seconds instead of WebSockets, keeping the infrastructure simple.
@@ -118,7 +125,7 @@ kirana/
 │   │   ├── [...segments]/page.tsx    # Dynamic catch-all page router
 │   │   ├── [[...segments]]/          # Optional catch-all (empty)
 │   │   ├── api/
-│   │   │   ├── [...path]/route.ts    # ★ Main API handler (~1750 lines)
+│   │   │   ├── [...path]/route.ts    # ★ Main API handler
 │   │   │   ├── locate/route.ts       # IP geolocation endpoint
 │   │   │   └── places/route.ts       # Google Places proxy
 │   │   └── auth/
@@ -149,7 +156,7 @@ kirana/
 │   │   ├── use-query.ts              # Data fetching hook with refresh
 │   │   └── use-realtime.ts           # Polling-based data refresh
 │   ├── lib/
-│   │   ├── models/index.ts           # ★ All Mongoose schemas & models (851 lines)
+│   │   ├── models/index.ts           # ★ All Mongoose schemas & models
 │   │   ├── types.ts                  # TypeScript interfaces for all entities
 │   │   ├── validation.ts             # Zod schemas for every endpoint
 │   │   ├── db.ts                     # MongoDB connection (cached singleton)
@@ -163,7 +170,7 @@ kirana/
 │   └── proxy.ts                      # Middleware pass-through
 ├── database/
 │   └── scripts/
-│       └── seed-mongo.ts             # Demo data seeder (450 lines)
+│       └── seed-mongo.ts             # Demo data seeder
 ├── tests/
 │   ├── brand.test.ts                 # Brand name unit tests
 │   ├── database.test.ts              # DB connection tests
@@ -174,7 +181,7 @@ kirana/
 │       ├── demo.spec.ts              # Full workflow E2E tests
 │       ├── marketplace.spec.ts       # Marketplace integration tests
 │       ├── branding.spec.ts          # Branding tests
-│       └── security.spec.ts          # Security header tests
+│       └── security.spec.ts          # Security scenarios
 ├── public/uploads/                   # User-uploaded images (gitignored)
 ├── .env.example                      # Environment variable template
 ├── next.config.ts                    # Next.js config (security headers, images)
@@ -192,6 +199,8 @@ All models are defined in `src/lib/models/index.ts`. Each uses a `getModel()` he
 
 ### Entity-Relationship Diagram
 
+The 17 entities below are MongoDB models. `FK` denotes a logical ObjectId reference, not a database-enforced SQL foreign key. Optional links and snapshots are intentional. Index declarations must be verified on the running database.
+
 ```mermaid
 erDiagram
     User {
@@ -201,7 +210,7 @@ erDiagram
         string phone UK "sparse unique, 10-15 digits"
         enum role "CUSTOMER | SHOPKEEPER | ADMIN"
         string avatar_url "profile picture URL"
-        string profile_image "synced with avatar_url"
+        string profile_image "save hook fills missing image alias"
         enum status "ACTIVE | INACTIVE | SUSPENDED"
         string password_hash "bcrypt 12 rounds, null for OAuth"
         string google_id UK "sparse unique, Google OAuth"
@@ -229,7 +238,7 @@ erDiagram
         string city "max 100"
         string state "max 100"
         string pincode "6-digit Indian PIN"
-        boolean is_default "only one per user"
+        boolean is_default "API clears other defaults; no unique constraint"
         Date created_at "auto"
         Date updated_at "auto"
     }
@@ -276,7 +285,7 @@ erDiagram
         ObjectId _id PK
         ObjectId product_id FK "parent Product"
         string image_url "image URL"
-        boolean is_primary "one primary per product"
+        boolean is_primary "not uniquely constrained"
         Date created_at "auto"
     }
 
@@ -310,7 +319,7 @@ erDiagram
         enum status "PLACED-ACCEPTED-PREPARING-OUT_FOR_DELIVERY-DELIVERED-CANCELLED"
         float total_amount "calculated from items"
         string notes "customer notes, max 2000"
-        string request_key UK "idempotency per customer"
+        string request_key "unique together with customer_id"
         Date created_at "auto"
         Date updated_at "auto"
     }
@@ -404,13 +413,13 @@ erDiagram
     User ||--o{ Order : "places as customer"
     User ||--o{ Review : "writes after delivery"
     User ||--o{ Complaint : "files for support"
-    User ||--o{ AuditLog : "admin actions logged"
+    User o|--o{ AuditLog : "admin actions logged"
 
     %% ═══════════════════════════════════════════
     %% CATEGORY HIERARCHY
     %% ═══════════════════════════════════════════
 
-    Category |o--o{ Category : "parent has subcategories"
+    Category o|--o{ Category : "parent has subcategories"
     Category ||--o{ Shop : "shop primary category"
     Category ||--o{ Product : "product category"
 
@@ -418,11 +427,11 @@ erDiagram
     %% SHOP ECOSYSTEM
     %% ═══════════════════════════════════════════
 
-    Shop |o--o| Address : "shop physical location"
+    Address o|--o{ Shop : "optional shop address reference"
     Shop ||--o{ Product : "shop inventory"
     Shop ||--o{ Order : "receives customer orders"
     Shop ||--o{ Review : "rated by customers"
-    Shop ||--o{ Complaint : "complaints about shop"
+    Shop o|--o{ Complaint : "complaints about shop"
     Shop ||--o{ ChatRoom : "customer conversations"
 
     %% ═══════════════════════════════════════════
@@ -431,7 +440,7 @@ erDiagram
 
     Product ||--o{ ProductImage : "gallery images"
     Product ||--o{ OrderItem : "purchased in orders"
-    Product |o--o{ ShoppingListItem : "referenced in lists"
+    Product o|--o{ ShoppingListItem : "referenced in lists"
 
     %% ═══════════════════════════════════════════
     %% SHOPPING LIST SYSTEM
@@ -445,9 +454,9 @@ erDiagram
 
     Order ||--o{ OrderItem : "line items with prices"
     Order ||--o{ OrderTracking : "status change history"
-    Order |o--|| Review : "one review per delivered order"
-    Order |o--o{ Complaint : "complaints about order"
-    Order }o--|| Address : "delivered to address"
+    Order ||--o| Review : "one review per delivered order"
+    Order o|--o{ Complaint : "complaints about order"
+    Address o|--o{ Order : "optional reference plus stored snapshot"
 
     %% ═══════════════════════════════════════════
     %% CHAT SYSTEM
@@ -459,7 +468,7 @@ erDiagram
     User ||--o{ OrderTracking : "shopkeeper/admin updates status"
 ```
 
-> **Notation:** `||--o{` one-to-many · `|o--o{` optional one-to-many · `|o--||` optional one-to-one · `PK` primary key · `FK` foreign key · `UK` unique key
+> **Notation:** `||--o{` one-to-many · `o|--o{` optional parent-to-many · `||--o|` one-to-optional-one · `PK` primary key · `FK` foreign key · `UK` unique key
 
 ---
 
@@ -468,23 +477,22 @@ erDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> PLACED : Customer places order
-    PLACED --> ACCEPTED : Shopkeeper accepts
-    PLACED --> CANCELLED : Customer or Shopkeeper cancels
+    PLACED --> ACCEPTED : Shop owner or admin accepts
+    PLACED --> CANCELLED : Customer owner, shop owner or admin
 
-    ACCEPTED --> PREPARING : Shopkeeper starts preparing
-    ACCEPTED --> CANCELLED : Shopkeeper cancels
+    ACCEPTED --> PREPARING : Shop owner or admin prepares
+    ACCEPTED --> CANCELLED : Customer owner, shop owner or admin
 
-    PREPARING --> OUT_FOR_DELIVERY : Shopkeeper dispatches
-    PREPARING --> CANCELLED : Shopkeeper cancels
+    PREPARING --> OUT_FOR_DELIVERY : Shop owner or admin dispatches
 
-    OUT_FOR_DELIVERY --> DELIVERED : Shopkeeper confirms delivery
+    OUT_FOR_DELIVERY --> DELIVERED : Shop owner or admin confirms delivery
 
     DELIVERED --> [*]
     CANCELLED --> [*]
 
     note right of PLACED
         Stock is decremented
-        Idempotency key prevents duplicates
+        Request key supports retry lookup
         Price verified at order time
     end note
 
@@ -576,7 +584,7 @@ flowchart TB
         end
 
         subgraph "API Routes"
-            MAIN["/api/[...path]/route.ts\n(1757 lines, all CRUD)"]
+            MAIN["/api/[...path]/route.ts\n(main business API)"]
             LOC["/api/locate\n(IP geolocation)"]
             PLC["/api/places\n(Google Places proxy)"]
             AG["/auth/google\n(OAuth start)"]
@@ -594,7 +602,7 @@ flowchart TB
     end
 
     subgraph "External Services"
-        MONGO[("MongoDB\n15 collections")]
+        MONGO[("MongoDB\n17 models")]
         GAPI["Google OAuth API"]
         GMAP["Google Maps/Places API"]
         IPGEO["IP Geolocation APIs\n(ipwho.is, freeipapi, ip-api)"]
@@ -715,7 +723,7 @@ flowchart TB
     V3 --> V4["Verify address:\nbelongs to user\nwithin delivery_radius_km"]
     V4 --> V5["For each item:\n- product exists & active\n- belongs to shop\n- sufficient stock\n- price matches expected_price"]
     V5 --> CREATE["Create Order document\nwith delivery_address snapshot"]
-    CREATE --> ITEMS["Create OrderItem documents\nDecrement stock_quantity atomically"]
+    CREATE --> ITEMS["Create OrderItem documents\nDecrement stock in separate writes"]
     ITEMS --> TRACK["Create initial OrderTracking\nstatus=PLACED"]
     TRACK --> DONE["Return order ID (201)"]
 ```
@@ -788,7 +796,7 @@ flowchart LR
         S4["Process orders\n(accept → deliver)"]
         S5["Chat with customers"]
         S6["View reviews"]
-        S7["Also has CUSTOMER access\nto marketplace"]
+        S7["Can browse public marketplace\nCustomer pages remain role-gated"]
     end
 
     subgraph "ADMIN"
@@ -801,7 +809,7 @@ flowchart LR
         A7["Handle complaints\n(status transitions)"]
         A8["Reports & analytics\n(daily order report)"]
         A9["Platform settings\n(name, email, announcement)"]
-        A10["Audit log viewer"]
+        A10["Audit logs via API"]
         A11["Delete reviews"]
     end
 ```
@@ -863,6 +871,7 @@ flowchart TB
 ```
 
 ### 1. `User`
+
 | Field | Type | Description |
 |---|---|---|
 | `name` | String (2–100) | Display name |
@@ -878,6 +887,7 @@ flowchart TB
 **Indexes:** `email` (unique), `phone` (unique sparse), `google_id` (unique sparse)
 
 ### 2. `Category`
+
 | Field | Type | Description |
 |---|---|---|
 | `name` | String (unique, max 100) | Category name |
@@ -888,6 +898,7 @@ flowchart TB
 **Indexes:** `parent_id`
 
 ### 3. `Address`
+
 | Field | Type | Description |
 |---|---|---|
 | `user_id` | ObjectId → User | Owner |
@@ -900,6 +911,7 @@ flowchart TB
 **Indexes:** `user_id`
 
 ### 4. `Shop`
+
 | Field | Type | Description |
 |---|---|---|
 | `owner_id` | ObjectId → User | Shopkeeper who owns it |
@@ -917,6 +929,7 @@ flowchart TB
 **Indexes:** `owner_id`, `address_id`, `(latitude, longitude)`, `name` (text), `category_id`
 
 ### 5. `Product`
+
 | Field | Type | Description |
 |---|---|---|
 | `shop_id` | ObjectId → Shop | Parent shop |
@@ -933,12 +946,15 @@ flowchart TB
 **Indexes:** `shop_id`, `category_id`, `name` (text)
 
 ### 6. `ProductImage`
+
 Stores multiple images per product with a `is_primary` flag.
 
 ### 7. `ShoppingList` + `ShoppingListItem`
+
 User-created grocery lists with items that can optionally reference a `Product`. The `ShoppingListItem` has a pre-save hook that syncs `name` and `product_name`.
 
 ### 8. `Order`
+
 | Field | Type | Description |
 |---|---|---|
 | `order_number` | String (unique) | Auto-generated `LK-XXXX` format |
@@ -953,30 +969,39 @@ User-created grocery lists with items that can optionally reference a `Product`.
 **Indexes:** `(customer_id, created_at)`, `(shop_id, created_at)`, `status`, `created_at`, `(customer_id, request_key)` (unique)
 
 ### 9. `OrderItem`
+
 Line items within an order: `product_id`, `product_name`, `unit_price`, `quantity`, `total_price`.
 
 ### 10. `OrderTracking`
+
 Status change log: `order_id`, `status`, `note`, `updated_by`, `created_at`.
 
 ### 11. `Review`
+
 One review per order (enforced by unique `order_id`). Fields: `order_id`, `customer_id`, `shop_id`, `rating` (1–5), `comment`.
 
 ### 12. `Complaint`
+
 Customer support tickets: `order_id`, `user_id`, `shop_id`, `subject`, `description`, `status` (OPEN → IN_PROGRESS → RESOLVED → CLOSED).
 
 ### 13. `ChatRoom`
+
 Unique `(customer_id, shop_id)` pair. One chat room per customer-shop relationship.
 
 ### 14. `ChatMessage`
+
 Messages in chat rooms. Supports types: `TEXT`, `IMAGE`, `PRODUCT`, `PRODUCT_LIST`, `ORDER` — each with a typed `payload`.
 
 ### 15. `AuditLog`
+
 Admin action log: `actor_id`, `resource`, `resource_id`, `action`, `changes`.
 
 ### 16. `PlatformSettings` (Singleton)
+
 Global settings: `marketplace_name`, `support_email`, `announcement`.
 
 ### Utility Functions in Models
+
 - **`distanceKm(lat1, lng1, lat2, lng2)`** — Haversine formula for distance between two coordinates.
 - **`categoryContains(parentId, childId)`** — BFS traversal to check if a category is a descendant of another.
 - **`ensurePlatformSettings()`** — Lazy-creates the singleton settings document.
@@ -986,23 +1011,28 @@ Global settings: `marketplace_name`, `support_email`, `announcement`.
 ## Authentication & Authorization
 
 ### Password Auth Flow
+
 1. **Register** (`POST /api/auth/register`) → Validates via `registerSchema` → Hashes password with bcryptjs (12 rounds) → Creates `User` document → Signs JWT → Sets `kirana-auth` httpOnly cookie (7-day expiry).
 2. **Login** (`POST /api/auth/login`) → Finds user by email → Verifies password hash → Checks account status → Signs JWT → Sets cookie.
 3. **Logout** (`POST /api/auth/logout`) → Clears the auth cookie.
 
 ### Google OAuth Flow
+
 1. `GET /auth/google` → Redirects to Google OAuth consent screen.
 2. Google redirects to `GET /auth/callback` with authorization code.
 3. Callback exchanges code for access token → Fetches user profile from Google → Finds or creates `User` (links Google ID to existing email accounts) → Signs JWT → Sets cookie → Redirects to `/` or `/shopkeeper`.
 
 ### JWT Token Structure
+
 - Algorithm: HS256
 - Payload: `{ sub: userId }`
 - Expiry: 7 days
 - Secret: `JWT_SECRET` env var
 
 ### Role-Based Access
+
 The `actor(roles?)` function in the API route:
+
 1. Reads JWT from cookie → Finds user in DB
 2. Checks `SUSPENDED` status → throws 403
 3. Checks role against allowed roles → throws 403
@@ -1029,13 +1059,13 @@ Server components use `requireRole(roles)` which redirects to `/login` or `/` if
 
 ## API Endpoints Reference
 
-All endpoints are handled by the catch-all route at `src/app/api/[...path]/route.ts`. The URL pattern is `/api/{resource}/{target}/{action}`.
+Most business endpoints are handled by the catch-all route at `src/app/api/[...path]/route.ts`. The URL pattern is `/api/{resource}/{target}/{action}`.
 
 ### Public Endpoints (No Auth)
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/categories` | List all categories |
+| `GET` | `/api/categories` | List categories (up to 100, paginated offset) |
 | `GET` | `/api/platform-settings` | Get marketplace name, support email, announcement |
 | `GET` | `/api/search/shops?lat=&lng=&...` | Discover nearby shops |
 | `GET` | `/api/search/products?lat=&lng=&...` | Search products across nearby shops |
@@ -1056,8 +1086,9 @@ All endpoints are handled by the catch-all route at `src/app/api/[...path]/route
 | `POST` | `/api/auth/update-email` | Change email (authenticated) |
 | `GET` | `/auth/google` | Initiate Google OAuth |
 | `GET` | `/auth/callback` | Google OAuth callback |
+| `GET` | `/auth/confirm` | Legacy confirmation redirect to login |
 
-### Customer Endpoints (Auth Required)
+### Signed-in Marketplace Endpoints
 
 | Method | Path | Description |
 |---|---|---|
@@ -1160,6 +1191,7 @@ Wrapper around `fetch("/api/" + path)` — auto-detects GET vs POST by presence 
 ## UI Components Deep Dive
 
 ### `Shell` — App Layout (`shell.tsx`)
+
 - **Server → Client bridge**: Root layout passes `profile` (from `currentProfile()`) and `connected` flag.
 - **Sidebar navigation**: Three sets of nav links — customer, shopkeeper, admin — auto-selected by route and role.
 - **Header**: Mobile menu toggle + `LocationPicker` + sign-in link + cart badge.
@@ -1168,48 +1200,57 @@ Wrapper around `fetch("/api/" + path)` — auto-detects GET vs POST by presence 
 - **Context**: Provides `ProfileContext` — consumed via `useProfile()` hook.
 
 ### `HomePage` / `SearchPage` / `ComparePage` (`discovery.tsx`)
+
 - **HomePage**: Hero section + category grid + nearby shops + price comparison table + map + shopping lists + active order banner.
 - **SearchPage**: Full-text search with filters (category, in-stock, open-only, sort). Tab switching between products and shops.
 - **ComparePage** (`kind="compare"`): Side-by-side price comparison with unit and brand filters.
 
 ### `ProductCard` / `ShopCard` (`product-card.tsx`)
+
 - Displays product image, name, price (INR format), shop name, distance badge.
 - "Add to cart" button with cross-shop confirmation dialog.
 - Shop card shows rating, product count, status badge, distance.
 
 ### `CartPage` / `OrdersPage` / `OrderPage` (`order-pages.tsx`)
+
 - **Cart**: Line items with quantity +/- controls, running total, proceed to checkout.
 - **Checkout**: Address selection (from saved addresses) + order placement with idempotency key.
 - **Orders**: List view with status badges, filters by status.
 - **Order Detail**: Item breakdown, delivery address, tracking timeline, review/complaint actions.
 
 ### `AccountPages` (`account-pages.tsx`)
+
 - **AuthPage**: Login form, registration form (with password strength validation), Google OAuth button.
 - **ProfilePage**: Edit name, phone, avatar (with image upload).
 - **AddressesPage**: CRUD for delivery addresses with location picker integration.
 
 ### `ChatPage` (`chat-page.tsx`)
+
 - Room list with unread badge counts.
 - Message thread supporting TEXT, PRODUCT, PRODUCT_LIST, ORDER, IMAGE message types.
 - Rich message cards for products (with price, stock) and orders (with status).
 - Auto-polls every 5 seconds for new messages via `useRealtime`.
 
 ### `ManagementPages` (`management-pages.tsx`)
+
 - Generic CRUD table for shops, products, categories, users, reviews, complaints.
 - Inline status toggles (approve/reject shops, activate/suspend users).
 - `EntityForm` modal for create/edit operations.
 
 ### `LocationPicker` (`location-picker.tsx`)
+
 - Three modes: browser geolocation, IP-based geolocation, manual search.
 - Google Places autocomplete (when enabled).
 - Saved addresses dropdown for logged-in users.
 
 ### `GoogleMap` (`google-map.tsx`)
+
 - Full Google Maps integration with `@googlemaps/js-api-loader`.
 - Shop markers on the map, click-to-view shop details.
 - Delivery radius visualization.
 
 ### `Feedback` (`feedback.tsx`)
+
 - **ToastProvider/useToast**: Global toast notification system (success/error, 4.5s auto-dismiss).
 - **Loading**: Skeleton grid (3 cards).
 - **Empty**: Empty state with icon and message.
@@ -1225,6 +1266,7 @@ The app uses a **catch-all dynamic route** at `src/app/[...segments]/page.tsx` t
 |---|---|---|
 | `/` | `HomePage` | No |
 | `/login`, `/register` | `AuthPage` | No |
+| `/forgot-password`, `/reset-password` | `AuthPage` (recovery flow incomplete) | Public page |
 | `/search` | `SearchPage` | No |
 | `/compare` | `SearchPage (compare mode)` | No |
 | `/shops` | `SearchPage (shops mode)` | No |
@@ -1247,6 +1289,7 @@ The app uses a **catch-all dynamic route** at `src/app/[...segments]/page.tsx` t
 | `/shopkeeper/orders` | `OrdersPage` | Shopkeeper |
 | `/shopkeeper/chat` | `ChatPage` | Shopkeeper |
 | `/shopkeeper/reviews` | `ManagementPage (reviews)` | Shopkeeper |
+| `/shopkeeper/settings` | `ProfilePage` | Shopkeeper |
 | `/admin` | `DashboardPage` | Admin |
 | `/admin/users` | `ManagementPage (users)` | Admin |
 | `/admin/shops` | `ManagementPage (shops)` | Admin |
@@ -1263,6 +1306,7 @@ The app uses a **catch-all dynamic route** at `src/app/[...segments]/page.tsx` t
 ## Key Business Logic
 
 ### Shop Discovery (`discoverShops`)
+
 1. Queries shops with `approval_status: "APPROVED"` and `status ≠ "INACTIVE"`.
 2. Filters by latitude/longitude bounding box (±50km / 111°).
 3. Filters by active owner (user status = "ACTIVE").
@@ -1273,6 +1317,7 @@ The app uses a **catch-all dynamic route** at `src/app/[...segments]/page.tsx` t
 8. Sorts by distance/rating/name and paginates (24 per page).
 
 ### Product Discovery (`discoverProducts`)
+
 1. Finds all eligible shops (same filtering as above).
 2. Queries products in those shops with `is_active: true`.
 3. Applies text search, in-stock filter, unit/brand filters.
@@ -1281,13 +1326,14 @@ The app uses a **catch-all dynamic route** at `src/app/[...segments]/page.tsx` t
 6. Sorts by price/distance/rating/name; paginates.
 
 ### Order Placement
+
 1. Validates all inputs with `orderSchema`.
 2. **Idempotency**: Checks `request_key` — if order already exists, returns existing ID.
 3. Verifies shop is approved, visible, and OPEN.
 4. Validates delivery address belongs to user and is within shop's delivery radius.
 5. Verifies each product: belongs to shop, is active, has sufficient stock, price hasn't changed.
 6. Creates `Order`, `OrderItem` records and initial `OrderTracking` entry.
-7. **Atomically decrements stock** for each product.
+7. Decrements each product with a separate `$inc` write. The order and inventory updates are not one transaction and do not condition the write on remaining stock.
 8. Returns order ID.
 
 ### Order Status Transitions
@@ -1296,23 +1342,29 @@ PLACED → ACCEPTED → PREPARING → OUT_FOR_DELIVERY → DELIVERED
   ↓         ↓           ↓
 CANCELLED CANCELLED  CANCELLED (only by shopkeeper/admin)
 ```
+
 - Customers can cancel only `PLACED` or `ACCEPTED` orders.
 - Shopkeepers/admins follow the state machine.
 - On cancellation, stock is automatically restored.
 
 ### Shopping List Resolution (`lists/{id}/resolve`)
+
 Matches list items to in-stock products at a specific shop:
+
 1. For each list item, searches available products by name, unit, and product_id.
 2. Returns `{ products: [...], missing: [...] }` — found products go to cart, missing items are reported.
 
 ### Chat System
+
 - Customer opens chat with a shop → creates/finds `ChatRoom`.
 - Messages support rich types: TEXT, PRODUCT (auto-fetches product details), PRODUCT_LIST (snapshot of shopping list), ORDER (order reference), IMAGE (uploaded image path).
 - Both parties can mark messages as read.
 - 5-second polling on the client side refreshes message count and content.
 
 ### Distance Calculation
+
 The Haversine formula (`distanceKm`) computes great-circle distance between two lat/lng coordinates, used for:
+
 - Filtering shops within delivery radius
 - Sorting by proximity
 - Validating delivery address is reachable
@@ -1322,19 +1374,24 @@ The Haversine formula (`distanceKm`) computes great-circle distance between two 
 ## Google Maps & Location Services
 
 ### IP Geolocation (`/api/locate`)
+
 Cascading fallback strategy:
+
 1. **ipwho.is** — primary
 2. **freeipapi.com** — fallback
 3. **ip-api.com** — secondary fallback
 4. **Hardcoded Gwalior** — default for local/MP IPs
 
 ### Places Proxy (`/api/places`)
-Server-side proxy to Google APIs (keeps API key server-side):
+
+Server-side proxy using `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, which is also exposed to the browser:
+
 - **Autocomplete**: `?input=query` → Google Place Autocomplete
 - **Place Details**: `?placeId=xxx` → lat/lng + formatted address
 - **Geocode**: `?geocode=query` → cascading: Google Geocoding → Find Place → Nominatim (OpenStreetMap)
 
 ### Google Map Component
+
 - Uses `@googlemaps/js-api-loader` for dynamic loading.
 - Shows shop markers on the map.
 - Supports delivery radius circles.
@@ -1384,18 +1441,23 @@ All input validation uses Zod schemas defined in `src/lib/validation.ts`:
 ## Custom Hooks
 
 ### `useQuery<T>(path)` — `src/hooks/use-query.ts`
+
 Generic data-fetching hook:
+
 - Returns `{ data, error, loading, refresh }`.
 - Calls `api<T>(path)` (GET) on mount and when path/revision changes.
-- Supports cancellation on unmount.
+- Suppresses stale state updates after cleanup; it does not abort the underlying fetch.
 - `refresh()` triggers re-fetch by incrementing revision counter.
 - Pass `null` as path to skip fetching.
 
 ### `useDebounce<T>(value, delay)` — `src/hooks/use-query.ts`
+
 Debounces a value by `delay` ms (default 300). Used for search input throttling.
 
 ### `useRealtime(table, onChange, filter?)` — `src/hooks/use-realtime.ts`
+
 Polling-based refresh hook:
+
 - Calls `onChange()` every 5 seconds.
 - Uses `useRef` to always call the latest callback.
 - Named `table` parameter is for future WebSocket compatibility but currently only drives the `useEffect` dependency.
@@ -1414,7 +1476,7 @@ Polling-based refresh hook:
 
 **Run**: `npm run seed` (requires `MONGODB_URI` and `SEED_PASSWORD` in `.env.local`).
 
-Deterministic IDs are generated using SHA-256 hashes for idempotent re-seeding.
+Deterministic demo IDs use SHA-256 hashes. The script upserts demo records and may overwrite their data; use a development database.
 
 ---
 
@@ -1424,6 +1486,7 @@ Deterministic IDs are generated using SHA-256 hashes for idempotent re-seeding.
 ```powershell
 npm test
 ```
+
 - `brand.test.ts` — Brand name display logic
 - `database.test.ts` — DB connection and model tests
 - `service-errors.test.ts` — Error classification
@@ -1434,11 +1497,12 @@ npm test
 npm run test:browser       # Smoke tests
 npm run test:integration   # Marketplace flows
 npm run test:demo          # Full demo workflow
-npm run test:security      # Security header checks
+npm run test:security      # Security scenarios
 ```
 
 Playwright config:
-- Runs against `http://localhost:3100` (auto-starts production build).
+
+- Runs against `http://localhost:3100` (starts the production server; run `npm run build` first).
 - Desktop Chrome + Pixel 7 (mobile) projects.
 - Uses local Chrome installation if available.
 
@@ -1447,7 +1511,9 @@ Playwright config:
 ## Security
 
 ### HTTP Security Headers (`next.config.ts`)
+
 Applied to all routes:
+
 - `X-Content-Type-Options: nosniff`
 - `X-Frame-Options: DENY`
 - `Referrer-Policy: strict-origin-when-cross-origin`
@@ -1456,14 +1522,15 @@ Applied to all routes:
 - `X-Powered-By` header is removed.
 
 ### API Security
+
 - **CSRF Protection**: Mutations verify `Origin` header and `sec-fetch-site` to block cross-site requests.
 - **Request size limits**: JSON body capped at 100KB, file uploads at 4.25MB.
 - **Image validation**: Magic bytes + MIME type + sharp integrity check.
-- **Input validation**: All inputs validated with Zod (SQL injection is N/A; NoSQL injection mitigated by strict schemas).
+- **Input validation**: Zod validates structured request bodies; validation does not replace authorization or safe query construction.
 - **Password hashing**: bcrypt with 12 salt rounds.
 - **JWT cookies**: httpOnly, secure (in production), sameSite=lax.
-- **Role enforcement**: Every endpoint checks user role before proceeding.
-- **Idempotent orders**: Duplicate orders prevented by `request_key`.
+- **Role enforcement**: Protected APIs use active-user and optional role checks; ownership coverage has known gaps documented below.
+- **Order retries**: Existing customer/request keys return the prior ID, backed by a unique compound index; this is not transactional stock protection.
 - **Soft-delete**: Products are deactivated, not deleted, preserving order history.
 
 ---
@@ -1481,13 +1548,15 @@ Applied to all routes:
 | `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth client secret |
 | `SEED_PASSWORD` | For seeding | Password for demo accounts (min 10 chars) |
 | `PLAYWRIGHT_EXECUTABLE_PATH` | For testing | Custom browser path for Playwright |
-| `DEFAULT_CITY` | Optional | Override IP geolocation default city |
+| `DEFAULT_CITY` | Optional | `Gwalior` enables the hardcoded override; not an arbitrary city setting |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional | Fallback OAuth client ID |
 
 ---
 
 ## Setup & Installation
 
 ### Prerequisites
+
 - **Node.js 22+**
 - **npm**
 - **MongoDB** (local or remote instance)
@@ -1538,7 +1607,7 @@ npm run typecheck      # TypeScript type checking (tsc --noEmit)
 npm test               # Unit tests (Node test runner)
 npm run test:browser   # Playwright smoke tests
 npm run test:demo      # Full E2E demo tests
-npm run test:security  # Security header tests
+npm run test:security  # Security scenarios
 npm run format         # Prettier formatting
 ```
 
@@ -1546,7 +1615,7 @@ npm run format         # Prettier formatting
 
 ## Demo Accounts
 
-After running `npm run seed`, the following accounts are available (all sharing the `SEED_PASSWORD`):
+New seeded accounts use `SEED_PASSWORD`. Existing account passwords are retained on reseed. The following accounts are available:
 
 | Role | Email |
 |---|---|
@@ -1560,4 +1629,183 @@ After running `npm run seed`, the following accounts are available (all sharing 
 
 ## License
 
-Private project.
+Private project; no open-source license file is present.
+
+## Runtime Scope and Historical Files
+
+The current application is a Next.js monolith: server pages and route handlers share the same repository and MongoDB models. The root layout reads the session profile, renders `Shell`, and passes page content into it. Client screens call the API; the API validates input, checks access where implemented, queries Mongoose models and returns JSON. `src/proxy.ts` only passes requests through.
+
+The database module caches both a connection and its promise globally. Model creation reuses existing Mongoose models during hot reload. API helpers convert top-level `_id` fields into frontend `id` fields; related records are assembled explicitly. There is no browser cart collection: the cart is localStorage state, and checkout revalidates its values on the server.
+
+| Path | Status and purpose |
+| --- | --- |
+| `database/scripts/seed-mongo.ts` | Active MongoDB seeding workflow |
+| `database/supabase/migrations/` | Historical PostgreSQL schema and feature migrations |
+| `database/supabase/tests/integrity.sql` | Historical SQL integrity checks; not run by `npm test` |
+| `database/supabase/config.toml`, `local-postgres-bootstrap.sql` | Retained local Supabase/PostgreSQL setup |
+| `database/evidence/audit-evidence.json` | Stored evidence artifact, not current test results |
+| `supabase/certs/prod-ca-2021.crt` | Retained PostgreSQL certificate |
+| `archive/prototype/` | Earlier standalone HTML/CSS/JavaScript prototype |
+| `AGENTS.md`, `CLAUDE.md` | Repository instructions for coding tools |
+
+Supabase RLS, SQL foreign keys, triggers and functions do not run in the active Mongoose application. No Supabase migration command is required for current local setup. There is no separate payment gateway, payment ledger, queue, driver application or live GPS service. Order tracking is a timeline of status changes.
+
+### Data relationships and integrity
+
+- A user may own multiple addresses, shops and lists. A shop belongs to an owner and category; its optional address reference is separate from its inline address/coordinates.
+- Products belong to shops/categories. Order items retain product references and purchased name/price snapshots; an order retains an address snapshot even if a saved address changes later.
+- Reviews belong to a specific delivered order and are unique per order. Complaints can omit their order/shop references.
+- Chat rooms have a unique customer/shop pair. Messages belong to a room and sender; their rich payloads are stored snapshots, not additional database-enforced relationships.
+- Audit `resource_id` is polymorphic and interpreted with `resource`. `PlatformSettings` is intended as a singleton but has no unique singleton key.
+- The shop coordinate index is a normal compound index, not a `2dsphere` index. Discovery performs Haversine calculations in application code.
+
+Most mutable models have `created_at` and `updated_at`. Product images, messages, tracking and audit logs use explicit creation timestamps; order items have no automatic timestamps. The user/list-item save hooks fill missing alias fields; they do not guarantee that every update operation keeps aliases synchronized.
+
+### Routing and UI boundaries
+
+The page router awaits `params` and `searchParams`, forces dynamic rendering and rejects extra segments. `/account`, `/products` without an ID, and `/admin/audit-logs` are not implemented pages. Audit logs are available through `/api/manage/audit_logs`. Protected-page redirects use `/login` for missing sessions and `/` for wrong-role/inactive profiles.
+
+Page roles do not imply identical API permissions: some marketplace APIs only require an active session. Canonical uppercase roles are the reliable values for page guards. Shopkeepers can browse public discovery, but customer-only pages such as checkout and shopping lists remain customer-gated.
+
+Search pages accept `q` and `category`; comparison also accepts `unit` and `brand`. Chat accepts a `room` query parameter. Complaint shop preselection exists but still validates UUIDs even though active database IDs are ObjectIds.
+
+### Business-rule details
+
+Stored opening/closing times do not automatically change shop status. Checkout checks explicit `OPEN` status. Price comparison uses product search and unit/brand filters; there is no canonical cross-shop SKU table establishing equivalence between differently named products.
+
+List resolution is limited to 100 items, combines repeated product matches, enforces stock/quantity limits, and reports missing items. It prepares a cart without reserving stock. A resolved cart still passes normal order validation at checkout.
+
+Shopkeeper metrics include stock below five, unread messages, today's orders and average rating. Admin reports accept 1–90 days, default 30, grouping by order creation date and current status. Delivered value is not a payment ledger or a measure of delivery-day revenue. The current “Open complaints” metric counts every status other than uppercase `RESOLVED`, including `CLOSED`. Audit logs cover selected mutations, not every CRUD operation.
+
+## API Contract and Request Examples
+
+The API tables list supported intended paths. The catch-all handler is not a strict route manifest: some branches ignore additional segments within its three-segment limit. Location and OAuth endpoints have their own route files.
+
+Responses are plain JSON objects or arrays. Errors normally use `{ "error": "message" }`. Common statuses are 400 for invalid input, 401 for missing authentication, 403 for explicit access denial, 404 for missing records, 405 for unsupported methods, 409 for duplicate conflicts and 503 for unexpected service failures. Some invalid state transitions return the default 400 rather than 403.
+
+Most updates use **POST**. PATCH is accepted only for platform settings. DELETE is supported for addresses, lists, list items, reviews and management products/categories at their ID paths. Product deletion marks `is_active=false`.
+
+Pagination normally uses zero-based `page` and 24 records; chat messages use 50, room summaries cap at 100, and public categories return up to 100 using a `page * 24` offset. Consult each branch before assuming uniform pagination.
+
+### Discovery
+
+```text
+GET /api/search/products?lat=26.2124&lng=78.1772&q=milk&in_stock=true&open_only=true&sort_by=price&page=0
+```
+
+Supported filters include `q`, `category`, `in_stock`, `open_only`, `sort_by`, `page`, `shop`, `unit` and `brand`. Shops use the applicable subset. Search requires `lat` and `lng`; shop/product detail calls also use location coordinates. IDs are MongoDB ObjectId strings, although several Zod schemas only enforce nonempty string length rather than ObjectId syntax.
+
+### Place an order
+
+```json
+{
+  "shop_id": "<shop ObjectId>",
+  "address_id": "<owned address ObjectId>",
+  "request_id": "<unique submission key>",
+  "notes": "Please call on arrival",
+  "items": [
+    { "product_id": "<product ObjectId>", "quantity": 2, "expected_price": 45 }
+  ]
+}
+```
+
+Send this to `POST /api/orders` with the session cookie. The server calculates the total from database prices, not a client-submitted total. It permits 1–100 distinct products and quantities 1–999. Success returns `{ "id": "..." }` with 201, including the existing-request fast path. Reuse the same request key when retrying the same submission.
+
+```mermaid
+sequenceDiagram
+    participant C as Customer UI
+    participant A as Orders API
+    participant D as MongoDB
+    C->>A: Submit request key, address and expected prices
+    A->>D: Find customer/request key
+    alt Existing order
+        A-->>C: Existing order ID
+    else New submission
+        A->>D: Read shop, owned address and products
+        A->>A: Validate radius, stock, ownership of address and prices
+        A->>D: Create order with address snapshot
+        loop Each product
+            A->>D: Create order-item snapshot
+            A->>D: Decrement stock
+        end
+        A->>D: Create PLACED tracking event
+        A-->>C: New order ID
+    end
+```
+
+These are separate writes without a transaction. The request key is not a guarantee against partial writes or concurrent overselling. Cancellation also restores stock and saves status in separate operations.
+
+### Other mutation shapes
+
+| Action | Body fields |
+| --- | --- |
+| Order status | `status`, `note` |
+| Resolve list | `shop_id`, `latitude`, `longitude` |
+| Create list item | `list_id`, nullable `product_id`, `name`, `quantity`, `unit` |
+| Open chat | `shop_id` |
+| Send message | `room_id`, `message_type`, `message`, optional `reference_id` or `image_path` |
+| Review | `order_id`, `shop_id`, `rating`, `comment` |
+| Complaint | `subject`, `description`, optional `order_id`, `shop_id`, `status` |
+| Upload | Multipart `file` and `bucket` |
+
+The browser `api()` wrapper chooses GET whenever its body argument is undefined. DELETE calls therefore pass a body such as `{}` and the explicit method. Uploads use multipart handling separately.
+
+## Known Implementation Gaps
+
+These are observations from the source, not fixes made by this documentation update. They qualify the feature descriptions and diagrams above.
+
+| Area | Current behavior / gap |
+| --- | --- |
+| Public registration | `registerSchema` accepts `ADMIN` and legacy role aliases; the handler persists the submitted role. Privileged registration is not blocked server-side. |
+| Ownership checks | Shop/product management writes check role but do not consistently constrain targets to the caller's shops. List-item mutations lack parent-list ownership checks; list deletion removes items before checking list ownership. |
+| Inventory and orders | Placement, stock deduction, cancellation and tracking use separate writes without transactions or conditional stock reservation. Concurrency can cause overselling, duplicate stock restoration or incomplete records. |
+| OAuth | Initiation/callback have no state/PKCE checks. Email linking does not explicitly check Google's verified-email flag. |
+| Password recovery | Forgot-password UI has no implemented recovery email/token endpoint. Reset-password is a signed-in password change, not a token-based recovery flow. |
+| Session lifecycle | JWTs last seven days with no revocation/refresh store. Password changes do not revoke existing sessions. A development secret is used when `JWT_SECRET` is absent. |
+| Reference integrity | Mongoose refs do not enforce foreign keys/cascades. Category deletion can leave references behind; complaint creation does not fully validate ownership of linked records. |
+| Database indexes | Phone/Google-ID indexes declare both `sparse` and `partialFilterExpression`; verify/correct actual MongoDB index creation. Inspecting schema metadata does not prove indexes initialize successfully. |
+| Legacy values | Some schemas accept lowercase role/status values while guards and filters compare uppercase. This can cause access or visibility inconsistencies. |
+| Unique conventions | Default addresses, primary product images and settings singleton lack dedicated unique constraints. |
+| Abuse/scaling | No application rate limiter. Search uses regular expressions; discovery enriches/filter results in application code. Polling and repeated related-record queries increase database load. |
+| Upload privacy | Files under `public/uploads` are publicly accessible, including chat images. There is no file garbage collection or object-storage integration. |
+| Test drift | Some browser expectations reference unsupported routes or historical behavior. Test-file existence is not evidence that those features currently pass. |
+
+## Deployment and Troubleshooting
+
+### Configuration details
+
+The example file omits Google OAuth variables; add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` if using Google login. Its callback URI is `<NEXT_PUBLIC_SITE_URL>/auth/callback` and must match the OAuth application configuration. Keep the client secret private. The Maps key is browser-visible and is also used for server REST requests; browser-referrer restrictions can block those calls, and the application has no separate server-key variable.
+
+The Places handler requires a configured key before reaching its Nominatim fallback. IP location tries three services with four-second timeouts, overrides local/Madhya Pradesh/Indore results to Gwalior, and falls back there if all providers fail. `DEFAULT_CITY` only recognizes `Gwalior` for this override.
+
+Seeding uses deterministic IDs and upserts demo data; it is not a read-only operation. Existing user passwords remain unchanged. Demo customer addresses are in Bengaluru while automatic location may be Gwalior, so select a compatible shop/address when testing checkout. Shopkeepers 3–5 are also available as `shopkeeper3@localkart.test` through `shopkeeper5@localkart.test`.
+
+### Build and hosting
+
+```powershell
+npm run build
+npm run start
+```
+
+The backend needs a Node runtime, MongoDB connectivity and writable persistent upload storage. It uses filesystem APIs and `sharp`, so it is not a static export. Multiple application instances need shared image storage or an object-storage adaptation. Do not assume runtime writes to `public/` persist or are served identically on every managed host. Back up MongoDB and uploaded files together. Verify indexes on the actual database and resolve the authorization/concurrency gaps before production deployment.
+
+### Test setup and maintenance
+
+Playwright loads `.env.local`, uses one worker and starts `npm run start -- --port 3100`. Build first. It can reuse an existing server outside CI. Set `PLAYWRIGHT_EXECUTABLE_PATH`, use the detected Windows Chrome installation, or install Chromium using `npx playwright install chromium`.
+
+`npx playwright test` runs all browser files, including branding; individual package scripts target subsets. Browser workflows may mutate data, so use a disposable development database. Unit tests inspect model/schema behavior rather than proving live database connectivity or complete authorization coverage. No application/browser pass is implied by this README.
+
+Before modifying Next.js code, follow `AGENTS.md` and read the relevant guide under `node_modules/next/dist/docs/`. Trace feature changes through the page router, component, API branch, Zod schema and Mongoose model together. `npm run format` rewrites files; it is not a read-only formatting check.
+
+| Symptom | Check |
+| --- | --- |
+| Missing URI / unavailable service | `.env.local`, MongoDB availability; URI is read when the DB module loads |
+| Empty discovery | Location, radius, approval, owner status, shop status and active products |
+| Checkout outside radius | Saved checkout address, which can differ from browsing location |
+| Price changed / insufficient stock | Refresh cart/product data; server uses current values |
+| Google login fails | OAuth ID/secret, site origin and callback registration |
+| Places lookup fails | Key/API configuration and restrictions for server REST usage |
+| Seed password rejected | Reseeding does not reset existing account passwords |
+| Unexpected account visibility | Uppercase role/status and ownership checks |
+| Upload disappears after deploy | Persistent/shared storage and host file-serving behavior |
+| Browser tests cannot start | Production build, port 3100, browser executable and environment |
